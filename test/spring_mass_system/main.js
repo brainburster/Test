@@ -43,6 +43,7 @@ class Particle {
     //this.f = [0, 0];
     this.springs = [];
     this.fixed = false;
+    this.obj_id = Math.floor(Math.random()*1000000);
   }
 
   draw(ctx) {
@@ -244,12 +245,13 @@ class SMSYS {
       //计算碰撞
       ps.forEach((p) => {
         ps.some((q) => {
+          if (q.obj_id===p.obj_id) return false;
           if (p === q) return false;
           if (Math.abs(p.x[0] - q.x[0]) > 35) return false;
           if (Math.abs(p.x[1] - q.x[1]) > 35) return false;
           return q.springs.some((s) => {
             if (s.p2 == q) return false;
-            const p2_p1 = mul_scalar(p.u, dt * 45);
+            const p2_p1 = mul_scalar(p.u, dt * 60);
             const p2 = add(p.x, p2_p1);
             const a = sub(s.p1.x, p.x);
             const b = sub(s.p2.x, p.x);
@@ -268,7 +270,7 @@ class SMSYS {
               s.p1.u = sub(s.p1.u,mul_scalar(p.u,0.33*la/(la+lb)));
               s.p2.u = sub(s.p2.u,mul_scalar(p.u,0.33*lb/(la+lb)));
               p.u = mul_scalar(r,0.66);
-              p.x = add(p.x, mul_scalar(r, dt * 15));
+              p.x = add(p.x, mul_scalar(r, dt * 60));
               return true;
             }
             return false;
@@ -296,11 +298,21 @@ class SMSYS {
         return;
       }
       const d = ((p.x[0] - p1.x[0]) ** 2 + (p.x[1] - p1.x[1]) ** 2) ** 0.5;
-      if (d > 20 && d < 60) {
+      if (d > 30 && d < 60) {
         p1.springs.push(new Spring(p1, p, d));
         p.springs.push(new Spring(p, p1, d));
       }
     });
+    const list1 = [];
+    const set_same_obj_id = (p,id,d)=>{
+      p.springs.forEach(s=>{
+        if(list1.includes(s.p2)) return;
+        s.p2.obj_id = id;
+        list1.push(s.p2);
+        set_same_obj_id(s.p2,id,d-1);
+      })
+    }
+    set_same_obj_id(p1,p1.obj_id,10);
   }
 
   handle_input() {
