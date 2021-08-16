@@ -2,11 +2,11 @@
 //以及Games201 https://www.bilibili.com/video/BV1ZK411H7Hc
 
 //杨式模数
-let k_y = 800;
+let k_y = 1000;
 const m = 1;
 const g = [0, 9.8];
 //减震器大小
-const dashpot_damping = 0.00025;
+const dashpot_damping = 0.8;
 
 //弹簧
 class Spring {
@@ -136,10 +136,10 @@ class SMSYS {
     if (this.stop) {
       return;
     }
-    const p = this.particles;
+    const ps = this.particles;
     const dt = this.dt * 0.001;
     const substep = () =>
-      p.forEach((p) => {
+      ps.forEach((p) => {
         if (p.fixed) {
           p.u = [0, 0];
           return;
@@ -158,10 +158,10 @@ class SMSYS {
             const v_rel =
               (v[0] - s.p2.u[0]) * direction[0] +
               (v[1] - s.p2.u[1]) * direction[1];
-            const damping = Math.min(dashpot_damping * k_y, 100);
+
             f = [
-              f[0] + (f_spring - damping * v_rel) * direction[0],
-              f[1] + (f_spring - damping * v_rel) * direction[1],
+              f[0] + (f_spring - dashpot_damping * v_rel) * direction[0],
+              f[1] + (f_spring - dashpot_damping * v_rel) * direction[1],
             ];
           });
           return f;
@@ -171,7 +171,11 @@ class SMSYS {
         const get_v = (p, v, dh) => {
           const f = get_f(p, v, dh);
           const a = [f[0] / m, f[1] / m];
-          return [(p.u[0] + a[0] * dt) * 0.9999, (p.u[1] + a[1] * dt) * 0.9999];
+          let k = 0.999999;
+          if (p.x[1] > this.h - 1.5) {
+            k = 0.995;
+          }
+          return [(p.u[0] + a[0] * dt) * k, (p.u[1] + a[1] * dt) * k];
         };
 
         //获得期望速度
@@ -185,38 +189,103 @@ class SMSYS {
           (1 / 6.0) * (v1[0] + 2 * v2[0] + 2 * v3[0] + v4[0]),
           (1 / 6.0) * (v1[1] + 2 * v2[1] + 2 * v3[1] + v4[1]),
         ];
+
         //更新位置
         p.x = [p.x[0] + p.u[0] * dt, p.x[1] + p.u[1] * dt];
 
         //边缘检测,反弹
         if (p.x[0] < 0) {
           p.x[0] = 1;
-          p.u = [-p.u[0] * 0.99, p.u[1] * 0.99];
+          p.u = [-p.u[0], p.u[1]];
         }
         if (p.x[0] > this.w - 1) {
           p.x[0] = this.w - 1;
-          p.u = [-p.u[0] * 0.99, p.u[1] * 0.99];
+          p.u = [-p.u[0], p.u[1]];
         }
         if (p.x[1] > this.h - 1) {
           p.x[1] = this.h - 1;
-          p.u = [p.u[0] * 0.99, -p.u[1] * 0.99];
+          p.u = [p.u[0], -p.u[1]];
         }
         if (p.x[1] < 0) {
           p.x[1] = 1;
-          p.u = [p.u[0] * 0.99, -p.u[1] * 0.99];
+          p.u = [p.u[0], -p.u[1]];
         }
       });
     for (let index = 0; index < 10; index++) {
       substep();
     }
-    p.forEach(p=>{
-      p.springs.forEach((s)=>{
-        if(s.b_muscle){
-          s.len = 17*(Math.sin(this.time*5)+1)+16;
+
+    //
+    const norm = (a)=>{
+      return (a[0] ** 2 + a[1] ** 2) ** 0.5;
+    }
+    //点乘
+    const dot = (a,b)=>{
+      return a[0] * b[0] + a[1] * b[1];
+    }
+    //叉乘
+    const cross = (a, b) => {
+      return a[0] * b[1] - a[1] * b[0];
+    };
+    //
+    const sub = (a, b) => {
+      return [a[0] - b[0], a[1] - b[1]];
+    };
+    //
+    const add = (a, b) => {
+      return [a[0] + b[0], a[1] + b[1]];
+    };
+    //
+    const mul_scalar = (a, b) => {
+      return [a[0] * b, a[1] * b];
+    };
+
+    if (this.time%3==1) {
+      //计算碰撞
+      ps.forEach((p) => {
+        ps.some((q) => {
+          if (p === q) return false;
+          if (Math.abs(p.x[0] - q.x[0]) > 35) return false;
+          if (Math.abs(p.x[1] - q.x[1]) > 35) return false;
+          return q.springs.some((s) => {
+            if (s.p2 == q) return false;
+            const p2_p1 = mul_scalar(p.u, dt * 45);
+            const p2 = add(p.x, p2_p1);
+            const a = sub(s.p1.x, p.x);
+            const b = sub(s.p2.x, p.x);
+            const c = p2_p1;
+            const d = sub(p.x, s.p1.x);
+            const e = sub(p2, s.p1.x);
+            const f = sub(s.p2.x, s.p1.x);
+            const g = cross(a, c) * cross(b, c);
+            const h = cross(d, f) * cross(e, f);
+            if (g < 0 && h < 0) {
+              const l = norm(f);
+              const n = [-f[1]/l, f[0]/l]; //法线
+              const r = sub(p.u,mul_scalar(mul_scalar(n,dot(p.u,n)),2))//反射向量
+              const la = norm(a);
+              const lb = norm(b);
+              s.p1.u = sub(s.p1.u,mul_scalar(p.u,0.33*la/(la+lb)));
+              s.p2.u = sub(s.p2.u,mul_scalar(p.u,0.33*lb/(la+lb)));
+              p.u = mul_scalar(r,0.66);
+              p.x = add(p.x, mul_scalar(r, dt * 15));
+              return true;
+            }
+            return false;
+          });
+        });
+      });
+    }
+
+    //肌肉伸缩
+    ps.forEach((p) => {
+      p.springs.forEach((s) => {
+        if (s.b_muscle) {
+          s.len = 17 * (Math.sin(this.time*0.001 * 5) + 1) + 16;
         }
-      })
-    })
-    this.time+=dt;
+      });
+    });
+    this.time += this.dt;
   }
 
   add_particle(x, y) {
@@ -245,23 +314,31 @@ class SMSYS {
         for (let j = 0; j < p.springs.length; j++) {
           const s = p.springs[j];
           const d = ((s.p2.x[0] - x) ** 2 + (s.p2.x[1] - y) ** 2) ** 0.5;
-          if (d < 60) {
+          if (d < 31) {
             p.springs.splice(j, 1);
             j--;
           }
         }
         //删除质点
         const d = ((p.x[0] - x) ** 2 + (p.x[1] - y) ** 2) ** 0.5;
-        if (d < 50) {
+        if (d < 30) {
           this.particles.splice(i, 1);
           i--;
         }
       }
     };
 
-    const add_muscle = ()=>{
+    const add_speed = (x,y,v)=>{
+      this.particles.forEach((p) => {
+        const dis = ((p.x[0] - x) ** 2 + (p.x[1] - y) ** 2) ** 0.5;
+        if (dis < 60) {
+          p.u = v;
+        }
+      });
+    }
+
+    const add_muscle = (x, y)=>{
       this.particles.forEach(p=>{
-        const [x, y] = mouse_state.pos;
         p.springs.forEach(s=>{
           const m1 =  (s.p1.x[0]+s.p2.x[0])*0.5;
           const m2 =  (s.p1.x[1]+s.p2.x[1])*0.5;
@@ -272,6 +349,8 @@ class SMSYS {
         })
       })
     }
+    this.add_speed = add_speed;
+    this.add_muscle = add_muscle;
 
     document.oncontextmenu = (e) => {
       e.preventDefault();
@@ -305,7 +384,7 @@ class SMSYS {
         this.particles.forEach((p) => {
           const dis = ((p.x[0] - x) ** 2 + (p.x[1] - y) ** 2) ** 0.5;
           if (dis < 60) {
-            p.u = [d[0] * 8, d[1] * 8];
+            add_speed(x,y, [d[0] * 5, d[1] * 5]);
           }
         });
       }
@@ -328,7 +407,7 @@ class SMSYS {
           delete_p_s();
           break;
         case "m":
-          add_muscle();
+          add_muscle(...mouse_state.pos);
           break;
         default:
           break;
@@ -338,16 +417,22 @@ class SMSYS {
 }
 
 function main() {
-  const smsys = new SMSYS(800, 600);
-  const p = new Particle([400, 300]);
+  const smsys = new SMSYS(1200, 600);
+  const p = new Particle([600, 300]);
   p.fixed = true;
   smsys.particles.push(p);
-  smsys.add_particle(450,300);
+  smsys.add_particle(659,300);
   smsys.add_particle(200,300);
   smsys.add_particle(250,300);
   smsys.add_particle(225,300+25*3**0.5);
+  smsys.add_particle(215,1);
 
   document.body.appendChild(smsys.get_canvas());
 
   smsys.run();
+  smsys.add_particle(1100,600);
+  smsys.add_particle(1140,600);
+  smsys.add_particle(1110,556.7);
+  smsys.add_muscle(1100,590);
+  smsys.add_speed(1130,620,[20,30]);
 }
