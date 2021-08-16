@@ -72,6 +72,8 @@ class SMSYS {
     this.dt = 1; //ms
     this.time = 0;
     this.stop = false;
+    this.enable_cllision = true;
+    this.enable_gravity = true;
     this.particles = [];
   }
 
@@ -115,13 +117,13 @@ class SMSYS {
     ctx.fillStyle = "black";
     ctx.font = "16px Arial";
     ctx.fillText(
-      "左键创建质点，右键拖动，中(E)键删除，滚轮改变弹性系数,",
+      "左键创建质点，右键拖动，中(E)键删除，空格暂停，滚轮改变弹性系数,",
       10,
       20,
       800
     );
     ctx.fillText(
-      "空格暂停，F键创建固定点，M键切换弹簧/肌肉，C键清空",
+      "F键 固定点，M键切换弹簧/肌肉，C键清空, Q键开关碰撞, G键开关重力",
       10,
       40,
       800
@@ -147,7 +149,10 @@ class SMSYS {
         }
         //获取受力
         const get_f = (p, v, dh) => {
-          let f = [m * g[0], m * g[1]];
+          let f = [0,0];
+          if(this.enable_gravity){
+            f = [f[0] + m * g[0],f[1] + m * g[1]];
+          }
           p.springs.forEach((s) => {
             const rest_len = s.len;
             const p1 = [p.x[0] + v[0] * dh * dt, p.x[1] + v[1] * dh * dt];
@@ -174,7 +179,7 @@ class SMSYS {
           const a = [f[0] / m, f[1] / m];
           let k = 0.999999;
           if (p.x[1] > this.h - 1.5) {
-            k = 0.995;
+            k = 0.9983;
           }
           return [(p.u[0] + a[0] * dt) * k, (p.u[1] + a[1] * dt) * k];
         };
@@ -241,20 +246,28 @@ class SMSYS {
       return [a[0] * b, a[1] * b];
     };
 
-    if (this.time%3==1) {
+    if (this.enable_cllision && this.time % 3 == 1) {
       //计算碰撞
       ps.forEach((p) => {
+        if(p.fixed) return;
         ps.some((q) => {
-          if (q.obj_id===p.obj_id) return false;
+          if (q.obj_id === p.obj_id) return false;
           if (p === q) return false;
           if (Math.abs(p.x[0] - q.x[0]) > 35) return false;
           if (Math.abs(p.x[1] - q.x[1]) > 35) return false;
           return q.springs.some((s) => {
             if (s.p2 == q) return false;
-            const p2_p1 = mul_scalar(p.u, dt * 60);
-            const p2 = add(p.x, p2_p1);
             const a = sub(s.p1.x, p.x);
             const b = sub(s.p2.x, p.x);
+            const la = norm(a);
+            const lb = norm(b);
+            const v_s = add(
+              mul_scalar(s.p1.u, lb / (la + lb)),
+              mul_scalar(s.p2.u, la / (la + lb))
+            ); //mul_scalar(add(s.p1.u,s.p2.u),0.5);
+            const v = sub(p.u, v_s);
+            const p2_p1 = mul_scalar(v, dt * 60);
+            const p2 = add(p.x, p2_p1);
             const c = p2_p1;
             const d = sub(p.x, s.p1.x);
             const e = sub(p2, s.p1.x);
@@ -263,14 +276,15 @@ class SMSYS {
             const h = cross(d, f) * cross(e, f);
             if (g < 0 && h < 0) {
               const l = norm(f);
-              const n = [-f[1]/l, f[0]/l]; //法线
-              const r = sub(p.u,mul_scalar(mul_scalar(n,dot(p.u,n)),2))//反射向量
-              const la = norm(a);
-              const lb = norm(b);
-              s.p1.u = sub(s.p1.u,mul_scalar(p.u,0.33*la/(la+lb)));
-              s.p2.u = sub(s.p2.u,mul_scalar(p.u,0.33*lb/(la+lb)));
-              p.u = mul_scalar(r,0.66);
-              p.x = add(p.x, mul_scalar(r, dt * 60));
+              const n = [-f[1] / l, f[0] / l]; //法线
+              const r = sub(v, mul_scalar(mul_scalar(n, dot(v, n)), 2)); //反射向量
+              s.p1.u = add(s.p1.u, mul_scalar(r, (-0.1* lb) / (la + lb)));
+              s.p2.u = add(s.p2.u, mul_scalar(r, (-0.1 * la) / (la + lb)));
+              p.u = mul_scalar(r, 0.8);
+              p.x = add(p.x, mul_scalar(p.u, dt * 60));
+              s.p1.x = add(s.p1.x, mul_scalar(p.u, -dt * 60));
+              s.p2.x = add(s.p2.x, mul_scalar(p.u, -dt * 60));
+
               return true;
             }
             return false;
@@ -381,8 +395,13 @@ class SMSYS {
     this.canvas.onwheel = (e) => {
       if (e.deltaY < 0) {
         k_y *= 1.1;
-      } else {
+      } else{
         k_y /= 1.1;
+      }
+      if(k_y>10000){
+        k_y = 10000;
+      }else if(k_y<0.01){
+        k_y = 0.01;
       }
     };
 
@@ -421,6 +440,12 @@ class SMSYS {
         case "m":
           add_muscle(...mouse_state.pos);
           break;
+        case "q":
+          this.enable_cllision = !this.enable_cllision;
+          break;
+        case "g":
+          this.enable_gravity = !this.enable_gravity;
+          break;
         default:
           break;
       }
@@ -437,7 +462,7 @@ function main() {
   smsys.add_particle(200,300);
   smsys.add_particle(250,300);
   smsys.add_particle(225,300+25*3**0.5);
-  smsys.add_particle(215,1);
+  smsys.add_particle(226,100);
 
   document.body.appendChild(smsys.get_canvas());
 
