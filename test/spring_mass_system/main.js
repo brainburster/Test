@@ -2,11 +2,11 @@
 //以及Games201 https://www.bilibili.com/video/BV1ZK411H7Hc
 
 //杨式模数
-let k_y = 2000;
+let k_y = 800;
 const m = 1;
 const g = [0, 9.8];
 //减震器大小
-const dashpot_damping = 0.0005;
+const dashpot_damping = 0.00025;
 
 //弹簧
 class Spring {
@@ -14,14 +14,23 @@ class Spring {
     this.p1 = p1;
     this.p2 = p2;
     this.len = len;
+    this.b_muscle = false;
   }
+
   draw(ctx) {
     ctx.beginPath();
-    ctx.lineWidth = 2.5;
     ctx.moveTo(this.p1.x[0], this.p1.x[1]);
     ctx.lineTo(this.p2.x[0], this.p2.x[1]);
     ctx.closePath();
+    const d = ((this.p1.x[1]- this.p2.x[1])**2+(this.p1.x[0]- this.p2.x[0])**2)**0.5
+    ctx.lineWidth = 2.4*Math.abs(this.len/d)+0.1;
+    if(this.b_muscle){
+      ctx.strokeStyle = "rgb(233,123,123)";
+    }else{
+      ctx.strokeStyle = "black";
+    }
     ctx.stroke();
+    ctx.lineWidth = 1;
   }
 }
 
@@ -60,6 +69,7 @@ class SMSYS {
     this.w = w;
     this.h = h;
     this.dt = 1; //ms
+    this.time = 0;
     this.stop = false;
     this.particles = [];
   }
@@ -103,8 +113,19 @@ class SMSYS {
     ctx.strokeStyle = "black";
     ctx.fillStyle = "black";
     ctx.font = "16px Arial";
-    ctx.fillText("左键创建质点，右键拖动，中(E)键删除，滚轮改变弹性系数，空格暂停，F键创建固定点，C键清空, ",10,20,800);
-    ctx.fillText("杨氏模量: "+k_y.toFixed(2),10,40,300);
+    ctx.fillText(
+      "左键创建质点，右键拖动，中(E)键删除，滚轮改变弹性系数,",
+      10,
+      20,
+      800
+    );
+    ctx.fillText(
+      "空格暂停，F键创建固定点，M键切换弹簧/肌肉，C键清空",
+      10,
+      40,
+      800
+    );
+    ctx.fillText("杨氏模量: " + k_y.toFixed(2), 10, 60, 300);
 
     this.particles.forEach((p) => {
       p.draw(ctx);
@@ -120,7 +141,7 @@ class SMSYS {
     const substep = () =>
       p.forEach((p) => {
         if (p.fixed) {
-          p.u = [0,0];
+          p.u = [0, 0];
           return;
         }
         //获取受力
@@ -137,7 +158,7 @@ class SMSYS {
             const v_rel =
               (v[0] - s.p2.u[0]) * direction[0] +
               (v[1] - s.p2.u[1]) * direction[1];
-              const damping = Math.min(dashpot_damping *k_y,100);
+            const damping = Math.min(dashpot_damping * k_y, 100);
             f = [
               f[0] + (f_spring - damping * v_rel) * direction[0],
               f[1] + (f_spring - damping * v_rel) * direction[1],
@@ -150,7 +171,7 @@ class SMSYS {
         const get_v = (p, v, dh) => {
           const f = get_f(p, v, dh);
           const a = [f[0] / m, f[1] / m];
-          return [(p.u[0] + a[0] * dt)*(0.9999), (p.u[1] + a[1] * dt)*(0.9999)];
+          return [(p.u[0] + a[0] * dt) * 0.9999, (p.u[1] + a[1] * dt) * 0.9999];
         };
 
         //获得期望速度
@@ -188,9 +209,17 @@ class SMSYS {
     for (let index = 0; index < 10; index++) {
       substep();
     }
+    p.forEach(p=>{
+      p.springs.forEach((s)=>{
+        if(s.b_muscle){
+          s.len = 17*(Math.sin(this.time*5)+1)+16;
+        }
+      })
+    })
+    this.time+=dt;
   }
-  
-  add_particle(x,y){
+
+  add_particle(x, y) {
     const p1 = new Particle([x, y]);
     this.particles.push(p1);
     this.particles.forEach((p) => {
@@ -206,28 +235,42 @@ class SMSYS {
   }
 
   handle_input() {
-    const mouse_state = {"pos" : [0,0]};
+    const mouse_state = { pos: [0, 0] };
 
-    const delete_p_s = ()=>{
+    const delete_p_s = () => {
       for (let i = 0; i < this.particles.length; i++) {
         const p = this.particles[i];
-        const [x,y] = mouse_state.pos;
+        const [x, y] = mouse_state.pos;
         //删除弹簧
         for (let j = 0; j < p.springs.length; j++) {
           const s = p.springs[j];
           const d = ((s.p2.x[0] - x) ** 2 + (s.p2.x[1] - y) ** 2) ** 0.5;
-          if(d<60){
-            p.springs.splice(j,1);
+          if (d < 60) {
+            p.springs.splice(j, 1);
             j--;
           }
         }
         //删除质点
         const d = ((p.x[0] - x) ** 2 + (p.x[1] - y) ** 2) ** 0.5;
-        if(d<50){
-            this.particles.splice(i, 1);
-            i--;
+        if (d < 50) {
+          this.particles.splice(i, 1);
+          i--;
         }
       }
+    };
+
+    const add_muscle = ()=>{
+      this.particles.forEach(p=>{
+        const [x, y] = mouse_state.pos;
+        p.springs.forEach(s=>{
+          const m1 =  (s.p1.x[0]+s.p2.x[0])*0.5;
+          const m2 =  (s.p1.x[1]+s.p2.x[1])*0.5;
+          const d2 = (m1 - x) ** 2 + (m2 - y) ** 2;
+          if(d2<200){
+            s.b_muscle = !s.b_muscle;
+          }
+        })
+      })
     }
 
     document.oncontextmenu = (e) => {
@@ -236,37 +279,35 @@ class SMSYS {
 
     this.canvas.onmousedown = (e) => {
       mouse_state.pos = [e.offsetX, e.offsetY];
-      const [x,y] = mouse_state.pos;
+      const [x, y] = mouse_state.pos;
       if (e.buttons === 4) {
         delete_p_s();
-      }
-      else if (e.buttons === 1) {
-        this.add_particle(x,y);
-      }
-    };
-
-    this.canvas.onwheel = (e)=>{
-      if(e.deltaY<0){
-        k_y*=1.1;
-      }else{
-        k_y/=1.1;
+      } else if (e.buttons === 1) {
+        this.add_particle(x, y);
       }
     };
 
-    this.canvas.onmousemove = (e)=>{
+    this.canvas.onwheel = (e) => {
+      if (e.deltaY < 0) {
+        k_y *= 1.1;
+      } else {
+        k_y /= 1.1;
+      }
+    };
+
+    this.canvas.onmousemove = (e) => {
       const [x, y] = [e.offsetX, e.offsetY];
       const d = [x - mouse_state.pos[0], y - mouse_state.pos[1]];
       mouse_state.pos = [x, y];
       if (e.buttons === 4) {
         delete_p_s();
-      }
-      else if(e.buttons===2){
-        this.particles.forEach((p)=>{
+      } else if (e.buttons === 2) {
+        this.particles.forEach((p) => {
           const dis = ((p.x[0] - x) ** 2 + (p.x[1] - y) ** 2) ** 0.5;
-          if(dis<60){
-            p.u = [d[0]*8,d[1]*8];
+          if (dis < 60) {
+            p.u = [d[0] * 8, d[1] * 8];
           }
-        }); 
+        });
       }
     };
 
@@ -285,6 +326,9 @@ class SMSYS {
           break;
         case "e":
           delete_p_s();
+          break;
+        case "m":
+          add_muscle();
           break;
         default:
           break;
