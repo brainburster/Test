@@ -298,7 +298,7 @@ class SMSYS {
         return;
       }
       const d = ((p.x[0] - p1.x[0]) ** 2 + (p.x[1] - p1.x[1]) ** 2) ** 0.5;
-      if (d > 30 && d < 60) {
+      if (d > 16 && d < 60) {
         p1.springs.push(new Spring(p1, p, d));
         p.springs.push(new Spring(p, p1, d));
       }
@@ -429,11 +429,11 @@ class SMSYS {
 }
 
 function main() {
-  const smsys = new SMSYS(1200, 600);
-  const p = new Particle([600, 300]);
+  const smsys = new SMSYS(800, 600);
+  const p = new Particle([400, 300]);
   p.fixed = true;
   smsys.particles.push(p);
-  smsys.add_particle(659,300);
+  smsys.add_particle(459,300);
   smsys.add_particle(200,300);
   smsys.add_particle(250,300);
   smsys.add_particle(225,300+25*3**0.5);
@@ -442,9 +442,9 @@ function main() {
   document.body.appendChild(smsys.get_canvas());
 
   smsys.run();
-  smsys.add_particle(1100,600);
-  smsys.add_particle(1140,600);
-  smsys.add_particle(1110,556.7);
-  smsys.add_muscle(1100,590);
-  smsys.add_speed(1130,620,[20,30]);
+  smsys.add_particle(700,600);
+  smsys.add_particle(740,600);
+  smsys.add_particle(710,556.7);
+  smsys.add_muscle(700,590);
+  smsys.add_speed(730,620,[20,30]);
 }
