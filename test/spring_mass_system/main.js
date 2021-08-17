@@ -139,6 +139,32 @@ class SMSYS {
     if (this.stop) {
       return;
     }
+
+    //
+    const norm = (a)=>{
+      return (a[0] ** 2 + a[1] ** 2) ** 0.5;
+    }
+    //点乘
+    const dot = (a,b)=>{
+      return a[0] * b[0] + a[1] * b[1];
+    }
+    //叉乘
+    const cross = (a, b) => {
+      return a[0] * b[1] - a[1] * b[0];
+    };
+    //
+    const sub = (a, b) => {
+      return [a[0] - b[0], a[1] - b[1]];
+    };
+    //
+    const add = (a, b) => {
+      return [a[0] + b[0], a[1] + b[1]];
+    };
+    //
+    const mul_scalar = (a, b) => {
+      return [a[0] * b, a[1] * b];
+    };
+
     const ps = this.particles;
     const dt = this.dt * 0.001;
     const substep = () =>
@@ -173,31 +199,37 @@ class SMSYS {
           return f;
         };
 
+        let k = 0.999999;
+        if (p.x[1] > this.h - 1.5) {
+          k = 0.9983;
+        }
+
         //获得速度;
-        const get_v = (p, v, dh) => {
-          const f = get_f(p, v, dh);
-          const a = [f[0] / m, f[1] / m];
-          let k = 0.999999;
-          if (p.x[1] > this.h - 1.5) {
-            k = 0.9983;
-          }
+        const get_v = (p, a, dh) => {
           return [(p.u[0] + a[0] * dt) * k, (p.u[1] + a[1] * dt) * k];
         };
 
         //获得期望速度
-        const v1 = get_v(p, p.u, 0);
-        const v2 = get_v(p, v1, 0.5);
-        const v3 = get_v(p, v2, 0.5);
-        const v4 = get_v(p, v3, 1);
+        const a1 = get_f(p, p.u, 0); //m = 1, 所以f=a
+        const v1 = p.u;
+        const a2 = get_f(p, v1, 0.5);
+        const v2 = get_v(p, a2, 0.5);
+        const a3 = get_f(p, v2, 0.5);
+        const v3 = get_v(p, a3, 0.5);
+        const a4 = get_f(p, v3, 1);
+        const v4 = get_v(p, a4, 1);
 
-        //RK4 更新速度
-        p.u = [
-          (1 / 6.0) * (v1[0] + 2 * v2[0] + 2 * v3[0] + v4[0]),
-          (1 / 6.0) * (v1[1] + 2 * v2[1] + 2 * v3[1] + v4[1]),
+        //Velocity Verlet 更新位置
+        p.x = [
+          p.x[0] + p.u[0] * dt + 0.5 * a1[0] * dt ** 2, //2阶泰勒展开
+          p.x[1] + p.u[1] * dt + 0.5 * a1[1] * dt ** 2,
         ];
 
-        //更新位置
-        p.x = [p.x[0] + p.u[0] * dt, p.x[1] + p.u[1] * dt];
+        //RK4 更新速度/位置
+        p.u = [
+          p.u[0] * k + (dt / 6.0) * (a1[0] + 2 * a2[0] + 2 * a3[0] + a4[0]),
+          p.u[1] * k + (dt / 6.0) * (a1[1] + 2 * a2[1] + 2 * a3[1] + a4[1]),
+        ];
 
         //边缘检测,反弹
         if (p.x[0] < 0) {
@@ -217,34 +249,10 @@ class SMSYS {
           p.u = [p.u[0], -p.u[1]];
         }
       });
+      
     for (let index = 0; index < 10; index++) {
       substep();
     }
-
-    //
-    const norm = (a)=>{
-      return (a[0] ** 2 + a[1] ** 2) ** 0.5;
-    }
-    //点乘
-    const dot = (a,b)=>{
-      return a[0] * b[0] + a[1] * b[1];
-    }
-    //叉乘
-    const cross = (a, b) => {
-      return a[0] * b[1] - a[1] * b[0];
-    };
-    //
-    const sub = (a, b) => {
-      return [a[0] - b[0], a[1] - b[1]];
-    };
-    //
-    const add = (a, b) => {
-      return [a[0] + b[0], a[1] + b[1]];
-    };
-    //
-    const mul_scalar = (a, b) => {
-      return [a[0] * b, a[1] * b];
-    };
 
     if (this.enable_cllision && this.time % 3 == 1) {
       //计算碰撞
@@ -282,9 +290,8 @@ class SMSYS {
               s.p2.u = add(s.p2.u, mul_scalar(r, (-0.1 * la) / (la + lb)));
               p.u = mul_scalar(r, 0.8);
               p.x = add(p.x, mul_scalar(p.u, dt * 60));
-              s.p1.x = add(s.p1.x, mul_scalar(p.u, -dt * 60));
-              s.p2.x = add(s.p2.x, mul_scalar(p.u, -dt * 60));
-
+              s.p1.x = add(s.p1.x, mul_scalar(p.u, -dt * 30));
+              s.p2.x = add(s.p2.x, mul_scalar(p.u, -dt * 30));
               return true;
             }
             return false;
