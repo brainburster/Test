@@ -39,8 +39,9 @@ class Particle {
   constructor(x) {
     //x位置，u速度，f受力
     this.x = x || [0, 0];
+    this.x_old = this.x;
     this.u = [0, 0];
-    //this.f = [0, 0];
+    this.a = [0, 0];
     this.springs = [];
     this.fixed = false;
     this.obj_id = Math.floor(Math.random()*1000000);
@@ -160,6 +161,7 @@ class SMSYS {
     const add = (a, b) => {
       return [a[0] + b[0], a[1] + b[1]];
     };
+
     //
     const mul_scalar = (a, b) => {
       return [a[0] * b, a[1] * b];
@@ -173,8 +175,8 @@ class SMSYS {
           p.u = [0, 0];
           return;
         }
-        //获取受力
-        const get_f = (p, v, dh) => {
+        //获取加速度
+        const get_a = (p, v, dh) => {
           let f = [0,0];
           if(this.enable_gravity){
             f = [f[0] + m * g[0],f[1] + m * g[1]];
@@ -192,60 +194,67 @@ class SMSYS {
               (v[1] - s.p2.u[1]) * direction[1];
 
             f = [
-              f[0] + (f_spring - dashpot_damping * v_rel) * direction[0],
-              f[1] + (f_spring - dashpot_damping * v_rel) * direction[1],
+              (f[0] + (f_spring - dashpot_damping * v_rel) * direction[0]) / m,
+              (f[1] + (f_spring - dashpot_damping * v_rel) * direction[1]) / m,
             ];
           });
           return f;
         };
 
+        //欧拉法
         let k = 0.999999;
         if (p.x[1] > this.h - 1.5) {
           k = 0.9983;
         }
-
         //获得速度;
         const get_v = (p, a, dh) => {
-          return [(p.u[0] + a[0] * dt) * k, (p.u[1] + a[1] * dt) * k];
+          return [(p.u[0] + a[0] * dt * dh) * k, (p.u[1] + a[1] * dt* dh) * k];
         };
-
         //获得期望速度
-        const a1 = get_f(p, p.u, 0); //m = 1, 所以f=a
+        const a1 = get_a(p, p.u, 0); //m = 1, 所以f=a
         const v1 = p.u;
-        const a2 = get_f(p, v1, 0.5);
+        const a2 = get_a(p, v1, 0.5);
         const v2 = get_v(p, a2, 0.5);
-        const a3 = get_f(p, v2, 0.5);
+        const a3 = get_a(p, v2, 0.5);
         const v3 = get_v(p, a3, 0.5);
-        const a4 = get_f(p, v3, 1);
-        const v4 = get_v(p, a4, 1);
-
-        //Velocity Verlet 更新位置
+        const a4 = get_a(p, v3, 1);
+        //更新速度
         p.x = [
           p.x[0] + p.u[0] * dt + 0.5 * a1[0] * dt ** 2, //2阶泰勒展开
           p.x[1] + p.u[1] * dt + 0.5 * a1[1] * dt ** 2,
         ];
-
         //RK4 更新速度/位置
         p.u = [
           p.u[0] * k + (dt / 6.0) * (a1[0] + 2 * a2[0] + 2 * a3[0] + a4[0]),
           p.u[1] * k + (dt / 6.0) * (a1[1] + 2 * a2[1] + 2 * a3[1] + a4[1]),
         ];
 
+        //verlet积分法, 精度并没有很高
+        // const a = get_a(p,p.u,0);
+        // const x_old = p.x_old;
+        // p.x_old = p.x;
+        // p.x = add(sub(mul_scalar(p.x, 2), x_old), mul_scalar(a, dt * dt));
+        // p.u = mul_scalar(sub(p.x, x_old), 1 / (2 * dt)); //其实是上一时刻的速度
+
         //边缘检测,反弹
         if (p.x[0] < 0) {
           p.x[0] = 1;
+          p.x_old[0] = 1;
           p.u = [-p.u[0], p.u[1]];
         }
         if (p.x[0] > this.w - 1) {
           p.x[0] = this.w - 1;
+          p.x_old[0] = this.w - 1;
           p.u = [-p.u[0], p.u[1]];
         }
         if (p.x[1] > this.h - 1) {
           p.x[1] = this.h - 1;
+          p.x_old[1] = this.h - 1;
           p.u = [p.u[0], -p.u[1]];
         }
         if (p.x[1] < 0) {
           p.x[1] = 1;
+          p.x_old[1] = 1;
           p.u = [p.u[0], -p.u[1]];
         }
       });
@@ -286,12 +295,12 @@ class SMSYS {
               const l = norm(f);
               const n = [-f[1] / l, f[0] / l]; //法线
               const r = sub(v, mul_scalar(mul_scalar(n, dot(v, n)), 2)); //反射向量
-              s.p1.u = add(s.p1.u, mul_scalar(r, (-0.1* lb) / (la + lb)));
+              s.p1.u = add(s.p1.u, mul_scalar(r, (-0.1 * lb) / (la + lb)));
               s.p2.u = add(s.p2.u, mul_scalar(r, (-0.1 * la) / (la + lb)));
-              p.u = mul_scalar(r, 0.8);
-              p.x = add(p.x, mul_scalar(p.u, dt * 60));
-              s.p1.x = add(s.p1.x, mul_scalar(p.u, -dt * 30));
-              s.p2.x = add(s.p2.x, mul_scalar(p.u, -dt * 30));
+              p.u = mul_scalar(r, 0.85);
+              p.x = add(p.x, mul_scalar(p.u, dt*30));
+              if(!s.p1.fixed) s.p1.x = add(s.p1.x, mul_scalar(p.u, -dt *15));
+              if(!s.p2.fixed) s.p2.x = add(s.p2.x, mul_scalar(p.u, -dt *15));
               return true;
             }
             return false;
