@@ -22,11 +22,14 @@ class Spring {
     ctx.moveTo(this.p1.x[0], this.p1.x[1]);
     ctx.lineTo(this.p2.x[0], this.p2.x[1]);
     ctx.closePath();
-    const d = ((this.p1.x[1]- this.p2.x[1])**2+(this.p1.x[0]- this.p2.x[0])**2)**0.5
-    ctx.lineWidth = 2.4*Math.abs(this.len/d)+0.1;
-    if(this.b_muscle){
+    const d =
+      ((this.p1.x[1] - this.p2.x[1]) ** 2 +
+        (this.p1.x[0] - this.p2.x[0]) ** 2) **
+      0.5;
+    ctx.lineWidth = 2.4 * Math.min(this.len / (d+1e-8),4) + 0.1;
+    if (this.b_muscle) {
       ctx.strokeStyle = "rgb(233,123,123)";
-    }else{
+    } else {
       ctx.strokeStyle = "black";
     }
     ctx.stroke();
@@ -44,7 +47,7 @@ class Particle {
     this.a = [0, 0];
     this.springs = [];
     this.fixed = false;
-    this.obj_id = Math.floor(Math.random()*1000000);
+    this.obj_id = Math.floor(Math.random() * 1000000);
   }
 
   draw(ctx) {
@@ -95,6 +98,7 @@ class SMSYS {
           //this.handle_input();
           this.update();
           lag -= this.dt;
+          this.time += this.dt;
         }
         this.render();
       } else {
@@ -141,75 +145,79 @@ class SMSYS {
       return;
     }
 
-    //
-    const norm = (a)=>{
+    const ps = this.particles;
+    const dt = this.dt * 0.001;
+
+    //长度（L2范数）
+    const norm = (a) => {
       return (a[0] ** 2 + a[1] ** 2) ** 0.5;
-    }
+    };
     //点乘
-    const dot = (a,b)=>{
+    const dot = (a, b) => {
       return a[0] * b[0] + a[1] * b[1];
-    }
+    };
     //叉乘
     const cross = (a, b) => {
       return a[0] * b[1] - a[1] * b[0];
     };
-    //
+    //减
     const sub = (a, b) => {
       return [a[0] - b[0], a[1] - b[1]];
     };
-    //
+    //加
     const add = (a, b) => {
       return [a[0] + b[0], a[1] + b[1]];
     };
 
-    //
-    const mul_scalar = (a, b) => {
+    //乘标量
+    const mul_s = (a, b) => {
       return [a[0] * b, a[1] * b];
     };
 
-    const ps = this.particles;
-    const dt = this.dt * 0.001;
+    //获取加速度
+    const get_a = (p, v, dh) => {
+      let f = [0, 0];
+      if (this.enable_gravity) {
+        f = [f[0] + m * g[0], f[1] + m * g[1]];
+      }
+      p.springs.forEach((s) => {
+        const rest_len = s.len;
+        const p1 = [p.x[0] + v[0] * dh * dt, p.x[1] + v[1] * dh * dt];
+        const p2 = s.p2.x;
+        const p1_p2 = [p1[0] - p2[0], p1[1] - p2[1]];
+        const length = (p1_p2[0] ** 2 + p1_p2[1] ** 2) ** 0.5;
+        const direction = [p1_p2[0] / length, p1_p2[1] / length];
+        const f_spring = -k_y * (length / rest_len - 1);
+        const v_rel =
+          (v[0] - s.p2.u[0]) * direction[0] + (v[1] - s.p2.u[1]) * direction[1];
+
+        f = [
+          (f[0] + (f_spring - dashpot_damping * v_rel) * direction[0]) / m,
+          (f[1] + (f_spring - dashpot_damping * v_rel) * direction[1]) / m,
+        ];
+      });
+      return f;
+    };
+
+    //子步骤
     const substep = () =>
       ps.forEach((p) => {
         if (p.fixed) {
           p.u = [0, 0];
           return;
         }
-        //获取加速度
-        const get_a = (p, v, dh) => {
-          let f = [0,0];
-          if(this.enable_gravity){
-            f = [f[0] + m * g[0],f[1] + m * g[1]];
-          }
-          p.springs.forEach((s) => {
-            const rest_len = s.len;
-            const p1 = [p.x[0] + v[0] * dh * dt, p.x[1] + v[1] * dh * dt];
-            const p2 = s.p2.x;
-            const p1_p2 = [p1[0] - p2[0], p1[1] - p2[1]];
-            const length = (p1_p2[0] ** 2 + p1_p2[1] ** 2) ** 0.5;
-            const direction = [p1_p2[0] / length, p1_p2[1] / length];
-            const f_spring = -k_y * (length / rest_len - 1);
-            const v_rel =
-              (v[0] - s.p2.u[0]) * direction[0] +
-              (v[1] - s.p2.u[1]) * direction[1];
 
-            f = [
-              (f[0] + (f_spring - dashpot_damping * v_rel) * direction[0]) / m,
-              (f[1] + (f_spring - dashpot_damping * v_rel) * direction[1]) / m,
-            ];
-          });
-          return f;
-        };
-
-        //欧拉法
+        //速度衰减
         let k = 0.999999;
         if (p.x[1] > this.h - 1.5) {
-          k = 0.9983;
+          k = 0.9983; //模拟地面摩擦
         }
+
         //获得速度;
         const get_v = (p, a, dh) => {
-          return [(p.u[0] + a[0] * dt * dh) * k, (p.u[1] + a[1] * dt* dh) * k];
+          return [p.u[0] + a[0] * dt * dh * k, p.u[1] + a[1] * dt * dh * k];
         };
+
         //获得期望速度
         const a1 = get_a(p, p.u, 0); //m = 1, 所以f=a
         const v1 = p.u;
@@ -218,6 +226,7 @@ class SMSYS {
         const a3 = get_a(p, v2, 0.5);
         const v3 = get_v(p, a3, 0.5);
         const a4 = get_a(p, v3, 1);
+
         //更新速度
         p.x = [
           p.x[0] + p.u[0] * dt + 0.5 * a1[0] * dt ** 2, //2阶泰勒展开
@@ -239,26 +248,27 @@ class SMSYS {
         //边缘检测,反弹
         if (p.x[0] < 0) {
           p.x[0] = 1;
-          p.x_old[0] = 1;
+          //p.x_old[0] = 1;
           p.u = [-p.u[0], p.u[1]];
         }
         if (p.x[0] > this.w - 1) {
           p.x[0] = this.w - 1;
-          p.x_old[0] = this.w - 1;
+          //p.x_old[0] = this.w - 1;
           p.u = [-p.u[0], p.u[1]];
         }
         if (p.x[1] > this.h - 1) {
           p.x[1] = this.h - 1;
-          p.x_old[1] = this.h - 1;
+          //p.x_old[1] = this.h - 1;
           p.u = [p.u[0], -p.u[1]];
         }
         if (p.x[1] < 0) {
           p.x[1] = 1;
-          p.x_old[1] = 1;
+          //p.x_old[1] = 1;
           p.u = [p.u[0], -p.u[1]];
         }
       });
-      
+
+    //进行10次子步骤
     for (let index = 0; index < 10; index++) {
       substep();
     }
@@ -266,7 +276,7 @@ class SMSYS {
     if (this.enable_cllision && this.time % 3 == 1) {
       //计算碰撞
       ps.forEach((p) => {
-        if(p.fixed) return;
+        if (p.fixed) return;
         ps.some((q) => {
           if (q.obj_id === p.obj_id) return false;
           if (p === q) return false;
@@ -279,11 +289,11 @@ class SMSYS {
             const la = norm(a);
             const lb = norm(b);
             const v_s = add(
-              mul_scalar(s.p1.u, lb / (la + lb)),
-              mul_scalar(s.p2.u, la / (la + lb))
+              mul_s(s.p1.u, lb / (la + lb)),
+              mul_s(s.p2.u, la / (la + lb))
             ); //mul_scalar(add(s.p1.u,s.p2.u),0.5);
             const v = sub(p.u, v_s);
-            const p2_p1 = mul_scalar(v, dt * 60);
+            const p2_p1 = mul_s(v, dt * 60);
             const p2 = add(p.x, p2_p1);
             const c = p2_p1;
             const d = sub(p.x, s.p1.x);
@@ -294,13 +304,13 @@ class SMSYS {
             if (g < 0 && h < 0) {
               const l = norm(f);
               const n = [-f[1] / l, f[0] / l]; //法线
-              const r = sub(v, mul_scalar(mul_scalar(n, dot(v, n)), 2)); //反射向量
-              s.p1.u = add(s.p1.u, mul_scalar(r, (-0.1 * lb) / (la + lb)));
-              s.p2.u = add(s.p2.u, mul_scalar(r, (-0.1 * la) / (la + lb)));
-              p.u = mul_scalar(r, 0.85);
-              p.x = add(p.x, mul_scalar(p.u, dt*30));
-              if(!s.p1.fixed) s.p1.x = add(s.p1.x, mul_scalar(p.u, -dt *15));
-              if(!s.p2.fixed) s.p2.x = add(s.p2.x, mul_scalar(p.u, -dt *15));
+              const r = sub(v, mul_s(mul_s(n, dot(v, n)), 2)); //反射向量
+              s.p1.u = add(s.p1.u, mul_s(r, (-0.1 * lb) / (la + lb)));
+              s.p2.u = add(s.p2.u, mul_s(r, (-0.1 * la) / (la + lb)));
+              p.u = mul_s(r, 0.85);
+              p.x = add(p.x, mul_s(p.u, dt * 30));
+              if (!s.p1.fixed) s.p1.x = add(s.p1.x, mul_s(p.u, -dt * 15));
+              if (!s.p2.fixed) s.p2.x = add(s.p2.x, mul_s(p.u, -dt * 15));
               return true;
             }
             return false;
@@ -313,11 +323,10 @@ class SMSYS {
     ps.forEach((p) => {
       p.springs.forEach((s) => {
         if (s.b_muscle) {
-          s.len = 17 * (Math.sin(this.time*0.001 * 5) + 1) + 16;
+          s.len = 17 * (Math.sin(this.time * 0.001 * 5) + 1) + 16;
         }
       });
     });
-    this.time += this.dt;
   }
 
   add_particle(x, y) {
@@ -334,15 +343,15 @@ class SMSYS {
       }
     });
     const list1 = [];
-    const set_same_obj_id = (p,id,d)=>{
-      p.springs.forEach(s=>{
-        if(list1.includes(s.p2)) return;
+    const set_same_obj_id = (p, id, d) => {
+      p.springs.forEach((s) => {
+        if (list1.includes(s.p2)) return;
         s.p2.obj_id = id;
         list1.push(s.p2);
-        set_same_obj_id(s.p2,id,d-1);
-      })
-    }
-    set_same_obj_id(p1,p1.obj_id,10);
+        set_same_obj_id(s.p2, id, d - 1);
+      });
+    };
+    set_same_obj_id(p1, p1.obj_id, 10);
   }
 
   handle_input() {
@@ -370,27 +379,28 @@ class SMSYS {
       }
     };
 
-    const add_speed = (x,y,v)=>{
+    const add_speed = (x, y, v) => {
       this.particles.forEach((p) => {
         const dis = ((p.x[0] - x) ** 2 + (p.x[1] - y) ** 2) ** 0.5;
         if (dis < 60) {
           p.u = v;
         }
       });
-    }
+    };
 
-    const add_muscle = (x, y)=>{
-      this.particles.forEach(p=>{
-        p.springs.forEach(s=>{
-          const m1 =  (s.p1.x[0]+s.p2.x[0])*0.5;
-          const m2 =  (s.p1.x[1]+s.p2.x[1])*0.5;
+    const add_muscle = (x, y) => {
+      this.particles.forEach((p) => {
+        p.springs.forEach((s) => {
+          const m1 = (s.p1.x[0] + s.p2.x[0]) * 0.5;
+          const m2 = (s.p1.x[1] + s.p2.x[1]) * 0.5;
           const d2 = (m1 - x) ** 2 + (m2 - y) ** 2;
-          if(d2<200){
+          if (d2 < 200) {
             s.b_muscle = !s.b_muscle;
           }
-        })
-      })
-    }
+        });
+      });
+    };
+
     this.add_speed = add_speed;
     this.add_muscle = add_muscle;
 
@@ -411,12 +421,12 @@ class SMSYS {
     this.canvas.onwheel = (e) => {
       if (e.deltaY < 0) {
         k_y *= 1.1;
-      } else{
+      } else {
         k_y /= 1.1;
       }
-      if(k_y>10000){
+      if (k_y > 10000) {
         k_y = 10000;
-      }else if(k_y<0.01){
+      } else if (k_y < 0.01) {
         k_y = 0.01;
       }
     };
@@ -431,7 +441,7 @@ class SMSYS {
         this.particles.forEach((p) => {
           const dis = ((p.x[0] - x) ** 2 + (p.x[1] - y) ** 2) ** 0.5;
           if (dis < 60) {
-            add_speed(x,y, [d[0] * 5, d[1] * 5]);
+            add_speed(x, y, [d[0] * 5, d[1] * 5]);
           }
         });
       }
@@ -474,18 +484,18 @@ function main() {
   const p = new Particle([400, 300]);
   p.fixed = true;
   smsys.particles.push(p);
-  smsys.add_particle(459,300);
-  smsys.add_particle(200,300);
-  smsys.add_particle(250,300);
-  smsys.add_particle(225,300+25*3**0.5);
-  smsys.add_particle(226,100);
+  smsys.add_particle(459, 300);
+  smsys.add_particle(200, 300);
+  smsys.add_particle(250, 300);
+  smsys.add_particle(225, 300 + 25 * 3 ** 0.5);
+  smsys.add_particle(226, 100);
 
   document.body.appendChild(smsys.get_canvas());
 
   smsys.run();
-  smsys.add_particle(700,600);
-  smsys.add_particle(740,600);
-  smsys.add_particle(710,556.7);
-  smsys.add_muscle(700,590);
-  smsys.add_speed(730,620,[20,30]);
+  smsys.add_particle(700, 600);
+  smsys.add_particle(740, 600);
+  smsys.add_particle(710, 556.7);
+  smsys.add_muscle(700, 590);
+  smsys.add_speed(730, 620, [20, 30]);
 }
