@@ -1,6 +1,6 @@
 class DNA {
   constructor(){
-    //质点位置(整数坐标)
+    //质点位置
     this.p = [];
     //弹簧链接
     this.s = [];
@@ -10,13 +10,13 @@ class DNA {
 
   //随机初始化
   random_init(){
-    const n = Math.random()*8+3;
-    let pos = [400,300];
+    const n = Math.random()*5+3;
+    let pos = [600,400];
     for (let i = 0; i < n; i++) {
       const x = [
-        Math.floor((Math.random()*2 - 1) * 50 + pos[0]),
-        Math.floor((Math.random()*2 - 1) * 50 + pos[1])];
-      this.p.push(x[0]*10000+x[1]);
+        Math.floor((Math.random()*2 - 1) * 30 + pos[0]),
+        Math.floor((Math.random()*2 - 1) * 30 + pos[1])];
+      this.p.push(x[0]+x[1]*10000);
       pos = x;
     }
     
@@ -91,8 +91,8 @@ class SMCreature {
   constructor(dna) {
     this.dna = dna;
     this.particles = [];
-    this.springs = new Map(); // {p1.id*p2.id, spring}
-    this.muscles = new Map(); // {p1.id*p2.id, spring}
+    this.springs = new Map(); // {key:p1.id*p2.id,val: spring}
+    this.muscles = new Map();
     this.fitness = 0;
     //
     dna.p.forEach(point => {
@@ -104,14 +104,14 @@ class SMCreature {
       const p1 = this.particles[index % 10000];
       const p2 = this.particles[Math.floor(index / 10000)];
       const len = ((p1.x[0] - p2.x[0]) ** 2 + (p1.x[1] - p2.x[1]) ** 2) ** 0.5;
-      this.springs.set(p1.id * p2.id, new Spring(p1, p2, len));
+      this.springs.set(p1.id * p2.id, new Spring(p1, p2, 30));
     });
 
     dna.m.forEach(index => {
       const p1 = this.particles[index % 10000];
       const p2 = this.particles[Math.floor(index / 10000)];
       const len = ((p1.x[0] - p2.x[0]) ** 2 + (p1.x[1] - p2.x[1]) ** 2) ** 0.5;
-      this.muscles.set(p1.id * p2.id,  new Spring(p1, p2, len));
+      this.muscles.set(p1.id * p2.id,  new Spring(p1, p2, 30));
     });
     //起始的x坐标
     this.start_x = this.particles[0].x[0];
@@ -141,18 +141,19 @@ class GASMSYS {
     //显示
     this.canvas = document.createElement("canvas");
     this.ctx = this.canvas.getContext("2d");
-    this.canvas.width = 800;
+    this.canvas.width = 1200;
     this.canvas.height = 600;
     this.w = this.canvas.width;
     this.h = this.canvas.height;
     this.dt = 1; //ms
     this.time = 0;
+    this.offsetX = 0;
   }
 
   simulate(creatues){
     const dt = this.dt * 0.001;
     const g = [0, 9.8];
-    let k_y = 1000;
+    let k_y = 800;
     const m = 1;
     const dashpot_damping = 0.8;
 
@@ -169,10 +170,10 @@ class GASMSYS {
         if (p === q) return;
         let s = null;
         const id = p.id * q.id;
-        if (c.springs.has(id)) {
-          s = c.springs.get(id);
-        } else if (c.muscles.has(id)) {
+        if (c.muscles.has(id)) {
           s = c.muscles.get(id);
+        } else if (c.springs.has(id)) {
+          s = c.springs.get(id);
         } else {
           return;
         }
@@ -198,37 +199,40 @@ class GASMSYS {
     const substep = () =>
       creatues.forEach((c) => {
         c.particles.forEach((p) => {
-          let k = 0.999999; //速度衰减(阻尼)
+          let k = 0.99999; //速度衰减(阻尼)
 
-          if (p.x[1] > this.h - 1.5) {
-            k = 0.9983; //模拟地面摩擦
+          if (p.x[1] > this.h - 20.5) {
+            k = 0.995; //模拟地面摩擦
           }
 
-          const a1 = get_a(c, p, p.u, 0); //m = 1, 所以f=a
-          const v1 = p.u;
-          const a2 = get_a(c, p, v1, 1);
-          //更新位置
-          p.x = [
-            p.x[0] + p.u[0] * dt + 0.5 * a1[0] * dt ** 2, //2阶泰勒展开
-            p.x[1] + p.u[1] * dt + 0.5 * a1[1] * dt ** 2,
-          ];
-          //更新速度
-          p.u = [
-            p.u[0] * k + dt*0.5*(a1[0]+a2[0]),
-            p.u[1] * k + dt*0.5*(a1[1]+a2[1])
-          ];
+          const a1 = get_a(c, p, p.u, 0);
+          // const v1 = p.u;
+          // const a2 = get_a(c, p, v1, 1);
+          // //更新位置
+          // p.x = [
+          //   p.x[0] + p.u[0] * dt + 0.5 * a1[0] * dt ** 2, //2阶泰勒展开
+          //   p.x[1] + p.u[1] * dt + 0.5 * a1[1] * dt ** 2,
+          // ];
+          // //更新速度
+          // p.u = [
+          //   p.u[0] * k + dt*0.5*(a1[0]+a2[0]),
+          //   p.u[1] * k + dt*0.5*(a1[1]+a2[1])
+          // ];
+
+          p.u = [p.u[0] * k + dt * a1[0], p.u[1] * k + dt * a1[1]];
+          p.x = [p.x[0] + dt * p.u[0], p.x[1] + dt * p.u[1]];
 
           //边缘检测,反弹
-          if (p.x[0] < 0) {
-            p.x[0] = 1;
-            p.u = [-p.u[0], p.u[1]];
-          }
-          if (p.x[0] > this.w - 1) {
-            p.x[0] = this.w - 1;
-            p.u = [-p.u[0], p.u[1]];
-          }
-          if (p.x[1] > this.h - 1) {
-            p.x[1] = this.h - 1;
+          // if (p.x[0] < 0) {
+          //   p.x[0] = 1;
+          //   p.u = [-p.u[0], p.u[1]];
+          // }
+          // if (p.x[0] > this.w - 1) {
+          //   p.x[0] = this.w - 1;
+          //   p.u = [-p.u[0], p.u[1]];
+          // }
+          if (p.x[1] > this.h - 20) {
+            p.x[1] = this.h - 20;
             p.u = [p.u[0], -p.u[1]];
           }
           if (p.x[1] < 0) {
@@ -253,7 +257,7 @@ class GASMSYS {
           if (!c.muscles.has(id)) return;
           m = c.muscles.get(id);
           m.len =
-            (0.8 * (Math.sin(this.time * 0.001 * 5) + 1) + 0.2) *
+            (0.8 * (Math.sin(this.time * 0.2 / m.original_len) + 1) + 0.2) *
             m.original_len;
         });
       });
@@ -263,8 +267,8 @@ class GASMSYS {
   draw_creatures(creatues){
     const draw_spring = (s, color) => {
       this.ctx.beginPath();
-      this.ctx.moveTo(s.p1.x[0], s.p1.x[1]);
-      this.ctx.lineTo(s.p2.x[0], s.p2.x[1]);
+      this.ctx.moveTo(s.p1.x[0] + this.offsetX, s.p1.x[1]);
+      this.ctx.lineTo(s.p2.x[0] + this.offsetX, s.p2.x[1]);
       this.ctx.closePath();
       const d = ((s.p1.x[1]- s.p2.x[1])**2+(s.p1.x[0]- s.p2.x[0])**2)**0.5
       this.ctx.lineWidth = 2.4 * Math.min(s.len / d, 4) + 0.1;
@@ -275,7 +279,7 @@ class GASMSYS {
 
     const draw_particle = (p)=>{
       this.ctx.beginPath();
-      this.ctx.ellipse(p.x[0], p.x[1], 5, 5, 0, 0, Math.PI * 2);
+      this.ctx.ellipse(p.x[0] + this.offsetX, p.x[1], 5, 5, 0, 0, Math.PI * 2);
       this.ctx.closePath();
       this.ctx.fillStyle = "black";
       this.ctx.fill();
@@ -297,11 +301,35 @@ class GASMSYS {
   }
 
   render(){
-    //...
+    //清空
     this.ctx.fillStyle = "white";
     this.ctx.fillRect(0, 0, this.w, this.h);
+    //绘制尺子
+    this.ctx.lineWidth = 0.5;
+    this.ctx.fillStyle = "gray";
+    this.ctx.beginPath();
+    this.ctx.moveTo(0,this.h-15);
+    this.ctx.lineTo(this.w,this.h-15);
+    this.ctx.closePath();
+    this.ctx.stroke();
+    for (let i = -this.w/2; i < this.w/2; i+=Math.floor(this.w/100)) {
+      const x = this.w / 2 + i;
+      const y = this.h-15;
+      const d = x - this.offsetX - this.w / 2;
+      if(d%5==0){
+        this.ctx.fillText(""+d,x-4,this.h,100)
+        this.ctx.fillRect(x, y, 2, 5);
+      } else{
+        this.ctx.fillRect(x, y, 2, 3);
+      }
+    }
+    //绘制文字
+    this.ctx.fillText("代数: "+(this.gen+1),0,10,100);
+    this.ctx.fillText("种群大小: "+(this.pop.length),0,22,100);
+    this.ctx.fillText("时间: "+(this.time/1000).toFixed(2),0,34,100);
+    
+    //绘制弹簧质点
     this.ctx.fillStyle = "black";
-    //...
     this.draw_creatures(this.pop);
     //...
   }
@@ -319,11 +347,10 @@ class GASMSYS {
   }
 
   fitness_test() {
-    //模拟10秒计算适应度
+    //模拟20秒计算适应度
   }
 
   run() {
-    this.init_pop();
     let previous = new Date().getTime();
     let lag = 0.0;
     const gameloop = () => {
@@ -345,8 +372,24 @@ class GASMSYS {
 
       requestAnimationFrame(gameloop);
     };
-    //this.handle_input();
+    
+    this.init_pop();
+    this.handle_input();
     gameloop();
+  }
+
+  handle_input(){
+    const mouse_state = { pos: [0, 0] };
+    this.canvas.oncontextmenu = (e) => e.preventDefault();
+    this.canvas.onmousemove = (e) => {
+      const [x, y] = [e.offsetX, e.offsetY];
+      const d = [x - mouse_state.pos[0], y - mouse_state.pos[1]];
+      mouse_state.pos = [x, y];
+      if (e.buttons === 1 || e.buttons === 2) {
+        this.offsetX += d[0];
+      }
+    };
+
   }
 }
 
