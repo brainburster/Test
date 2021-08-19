@@ -66,7 +66,7 @@ class DNA {
   //突变
   mutation() {
     const r = Math.random();
-    if (r < 0.5) {
+    if (r < 0.4) {
       //移动顶点位置
       const i = Math.floor(Math.random() * this.p.length);
       this.p[i][0] += (Math.random() - 0.5) * 30;
@@ -115,7 +115,7 @@ class DNA {
       }
       const s = [i, j, Math.random() > 0.8 ? 1 : 0];
       this.s.push(s);
-    } else if (r < 0.97) {
+    } else if (r < 0.92) {
       //弹簧肌肉切换
       const i = Math.floor(Math.random() * this.s.length);
       this.s[i][2] = this.s[i][2] === 0 ? 1 : 0;
@@ -170,7 +170,7 @@ class SMCreature {
     this.springs = new Map(); // {key:p1.id*p2.id,val: spring}
     this.fitness = 0;
     //
-    let pos = [600,450];
+    let pos = [600,400];
     dna.p.forEach((point) => {
       pos = [pos[0] + point[0], pos[1] + point[1]];
       this.particles.push(new Particle(pos));
@@ -186,6 +186,7 @@ class SMCreature {
         return;
       }
       //const len = ((p1.x[0] - p2.x[0]) ** 2 + (p1.x[1] - p2.x[1]) ** 2) ** 0.5;
+      //const spring = new Spring(p1, p2, Math.min(Math.max(len,2),50), i[2]);
       const spring = new Spring(p1, p2, 30, i[2]);
       this.springs.set(p1.id * p2.id, spring);
       p1.springs.push([spring, 1]);
@@ -199,20 +200,20 @@ class SMCreature {
   get_fitness() {
     if (this.particles.length < 3 || this.particles.length > 10) return -100 * this.particles.length;
     if(this.springs.size<3||this.springs.size>16) return -100 * this.springs.size;
-    if(this.particles[0].x[1]>2000) return -1000;
+    if(this.particles[0].x[1]>2000) return -10000;
     let fitness = this.particles[0].x[0] - this.start_x;
-    if (fitness < 0) fitness *= 0.8;
+    if (fitness < 0) fitness *= 0.9;
     fitness = Math.abs(fitness);
-    if (fitness < 1) return -1000;
+    if (fitness < 1) fitness = -1000;
     let n_m = 0;
     this.springs.forEach(s=>{
       if (s.b_muscle) {
         n_m++;
       }
     });
-    fitness -= this.springs.size ** 1.5;
-    fitness -= this.particles.length ** 1.5 * 2;
-    fitness -= n_m ** 2 * 10;
+    fitness /= (n_m + 1)**0.5;
+    fitness /= this.springs.size**0.5;
+    fitness /= this.particles.length**0.5;
     return fitness;
   }
 }
@@ -243,10 +244,10 @@ class GASMSYS {
   }
 
   simulate(creatues) {
-    const dt = this.dt * 0.003;
+    const dt = this.dt * 0.001;
     const g = [0, 9.8];
-    let k_y = 800;
-    const m = 1;
+    let k_y = 100;
+    const m = 0.02;
     const dashpot_damping = 0.8;
 
     const norm = (a) => {
@@ -288,7 +289,7 @@ class GASMSYS {
     const substep = () =>
       creatues.forEach((c) => {
         c.particles.forEach((p) => {
-          let k = 0.99999; //速度衰减(阻尼)
+          let k = 0.9999; //速度衰减(阻尼)
 
           if (p.x[1] > this.h - 20.5) {
             k = 0.995; //模拟地面摩擦
@@ -325,16 +326,16 @@ class GASMSYS {
           // }
           if (p.x[1] > this.h - 20) {
             p.x[1] = this.h - 20;
-            p.u = [p.u[0], -p.u[1]*0.5];
+            p.u = [p.u[0], -p.u[1]];
           }
           if (p.x[1] < 0) {
             p.x[1] = 1;
-            p.u = [p.u[0], -p.u[1]*0.5];
+            p.u = [p.u[0], -p.u[1]];
           }
         });
       });
 
-    //进行10次子步骤
+    //进行20次子步骤
     for (let index = 0; index < 20; index++) {
       substep();
     }
@@ -344,7 +345,7 @@ class GASMSYS {
       c.springs.forEach((s) => {
         if (s.b_muscle) {
           s.len =
-            (0.8 * (Math.sin((this.time * 0.2) / 25/*s.original_len*/) + 1) + 0.2) *
+            (0.8 * (Math.sin((this.time * 0.8) / s.original_len) + 1) + 0.2) *
             s.original_len;
         }
       });
@@ -456,27 +457,27 @@ class GASMSYS {
       }else{
         this.same_fitness_count = 0;
       }
+      const half = this.pop.length / 2;
       //
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < half; i++) {
         const p1 = this.pop[i].dna.copy();
         this.pop[i] = this.pop[i].dna.gen_ms_creature();
-        if (Math.random() < 0.05 * Math.min(this.same_fitness_count, 4)) {
+        if (Math.random() < 0.05) {
           const r = new DNA();
           r.random_init();
-          this.pop[10 + i] = r.gen_ms_creature();
-        } else if (Math.random() < 0.25) {
-          const p2 = this.pop[Math.floor(Math.random() * 20)].dna.copy();
+          this.pop[half + i] = r.gen_ms_creature();
+        } else if (Math.random() < 0.1) {
+          const p2 = this.pop[Math.floor(Math.random() * this.pop.length)].dna.copy();
           const c = p1.crossover(p2);
           c.mutation();
-          this.pop[10 + i] = c.gen_ms_creature();
+          this.pop[half + i] = c.gen_ms_creature();
         } else {
           const c = p1.copy();
           c.mutation();
-          const n = Math.min(this.same_fitness_count ** 2, 16);
-          for (let j = 0; j < n; j++) {
+          for (let j = 0; j < this.same_fitness_count * 3; j++) {
             c.mutation();
           }
-          this.pop[10 + i] = c.gen_ms_creature();
+          this.pop[half + i] = c.gen_ms_creature();
         }
       }
     }
@@ -485,7 +486,7 @@ class GASMSYS {
   }
 
   init_pop() {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 16; i++) {
       const dna = new DNA();
       dna.random_init();
       this.pop.push(dna.gen_ms_creature());
