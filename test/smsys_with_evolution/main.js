@@ -4,8 +4,6 @@ class DNA {
     this.p = [];
     //弹簧链接
     this.s = [];
-    //肌肉链接
-    this.m = [];
   }
 
   //随机初始化
@@ -16,20 +14,20 @@ class DNA {
       const x = [
         Math.floor((Math.random()*2 - 1) * 30 + pos[0]),
         Math.floor((Math.random()*2 - 1) * 30 + pos[1])];
-      this.p.push(x[0]+x[1]*10000);
+      this.p.push(x);
       pos = x;
     }
     
-    const closed = [];
+    const existed = [];
     for (let i = 0; i < n; i++) {
       if (i > 0) {
         const id = i * 10001 - 1;
+        const s = [i, i - 1, 0];
         if (Math.random() > 0.8) {
-          this.m.push(id);
-        } else {
-          this.s.push(id);
+          s[2] = 1;
         }
-        closed.push(id);
+        this.s.push(s);
+        existed.push(id);
       }
       const m = Math.random() * 5 + 1;
       for (let j = 0; j < m; j++) {
@@ -38,14 +36,14 @@ class DNA {
         const d = Math.abs(this.p[i] - this.p[l]);
         if (d / 10000 > 60 || d % 10000 > 60) continue;
         const il = i + l * 10000;
-        if (closed.includes(il)) continue;
-        if (closed.includes(l + i * 10000)) continue;
+        if (existed.includes(il)) continue;
+        if (existed.includes(l + i * 10000)) continue;
+        const s = [i, l, 0];
         if (Math.random() > 0.8) {
-          this.m.push(il);
-        } else {
-          this.s.push(il);
+          s[2] = 1;
         }
-        closed.push(il);
+        this.s.push(s);
+        existed.push(il);
       }
     }
     
@@ -72,15 +70,17 @@ class Particle {
     this.u = [0, 0];
     //this.a = [0, 0];
     this.id = Math.floor(Math.random() * 1e6);
+    this.springs = [];
   }
 }
 
 class Spring {
-  constructor(p1,p2,len){
+  constructor(p1, p2, len, b_muscle = false) {
     this.p1 = p1;
     this.p2 = p2;
     this.original_len = len;
     this.len = len;
+    this.b_muscle = b_muscle;
   }
 }
 
@@ -96,23 +96,19 @@ class SMCreature {
     this.fitness = 0;
     //
     dna.p.forEach(point => {
-      const pos = [point % 10000, Math.floor(point / 10000)];
-      this.particles.push(new Particle(pos));
+      this.particles.push(new Particle(point));
     });
 
-    dna.s.forEach(index => {
-      const p1 = this.particles[index % 10000];
-      const p2 = this.particles[Math.floor(index / 10000)];
-      const len = ((p1.x[0] - p2.x[0]) ** 2 + (p1.x[1] - p2.x[1]) ** 2) ** 0.5;
-      this.springs.set(p1.id * p2.id, new Spring(p1, p2, 30));
+    dna.s.forEach(i => {
+      const p1 = this.particles[i[0]];
+      const p2 = this.particles[i[1]];
+      //const len = ((p1.x[0] - p2.x[0]) ** 2 + (p1.x[1] - p2.x[1]) ** 2) ** 0.5;
+      const spring = new Spring(p1, p2, 30, i[2]);
+      this.springs.set(p1.id * p2.id, spring);
+      p1.springs.push([spring, 1]);
+      p2.springs.push([spring, -1]);
     });
 
-    dna.m.forEach(index => {
-      const p1 = this.particles[index % 10000];
-      const p2 = this.particles[Math.floor(index / 10000)];
-      const len = ((p1.x[0] - p2.x[0]) ** 2 + (p1.x[1] - p2.x[1]) ** 2) ** 0.5;
-      this.muscles.set(p1.id * p2.id,  new Spring(p1, p2, 30));
-    });
     //起始的x坐标
     this.start_x = this.particles[0].x[0];
   }
@@ -136,8 +132,6 @@ class GASMSYS {
     //种群
     this.pop = [];
 
-    //状态
-    this.state = 0;
     //显示
     this.canvas = document.createElement("canvas");
     this.ctx = this.canvas.getContext("2d");
@@ -148,6 +142,7 @@ class GASMSYS {
     this.dt = 1; //ms
     this.time = 0;
     this.offsetX = 0;
+    this.scale = 1;
   }
 
   simulate(creatues){
@@ -166,34 +161,31 @@ class GASMSYS {
 
     const get_a = (c, p, v, dh) => {
       let f = [m * g[0], m * g[1]];
-      c.particles.forEach((q) => {
-        if (p === q) return;
-        let s = null;
-        const id = p.id * q.id;
-        if (c.muscles.has(id)) {
-          s = c.muscles.get(id);
-        } else if (c.springs.has(id)) {
-          s = c.springs.get(id);
-        } else {
-          return;
+      p.springs.forEach(sd=>{
+        const s = sd[0];
+        const d = sd[1];
+        let p1 = s.p1;
+        let p2 = s.p2;
+        if(d<0){
+          const temp = p1;
+          p1 = p2;
+          p2 = temp;
         }
-
-        const p1 = [p.x[0] + v[0] * dh * dt, p.x[1] + v[1] * dh * dt];
-        const p2 = q.x;
-        const p1_p2 = [p1[0] - p2[0], p1[1] - p2[1]];
+        const p1x = [p1.x[0] + v[0] * dh * dt, p1.x[1] + v[1] * dh * dt];
+        const p1_p2 = [p1x[0] - p2.x[0], p1x[1] - p2.x[1]];
         const length = norm(p1_p2);
         const direction = mul_s(p1_p2, 1 / length);
         const f_spring = -k_y * (length / s.len - 1);
         const v_rel =
-          (v[0] - q.u[0]) * direction[0] + (v[1] - q.u[1]) * direction[1];
+          (v[0] - p2.u[0]) * direction[0] + (v[1] - p2.u[1]) * direction[1];
 
         f = [
-          (f[0] + (f_spring - dashpot_damping * v_rel) * direction[0]) / m,
-          (f[1] + (f_spring - dashpot_damping * v_rel) * direction[1]) / m,
+          (f[0] + (f_spring - dashpot_damping * v_rel) * direction[0]),
+          (f[1] + (f_spring - dashpot_damping * v_rel) * direction[1]),
         ];
       });
 
-      return f;
+      return [f[0] / m, f[1] / m];
     };
 
     const substep = () =>
@@ -206,21 +198,21 @@ class GASMSYS {
           }
 
           const a1 = get_a(c, p, p.u, 0);
-          // const v1 = p.u;
-          // const a2 = get_a(c, p, v1, 1);
-          // //更新位置
-          // p.x = [
-          //   p.x[0] + p.u[0] * dt + 0.5 * a1[0] * dt ** 2, //2阶泰勒展开
-          //   p.x[1] + p.u[1] * dt + 0.5 * a1[1] * dt ** 2,
-          // ];
-          // //更新速度
-          // p.u = [
-          //   p.u[0] * k + dt*0.5*(a1[0]+a2[0]),
-          //   p.u[1] * k + dt*0.5*(a1[1]+a2[1])
-          // ];
+          const v1 = p.u;
+          const a2 = get_a(c, p, v1, 1);
+          //更新位置
+          p.x = [
+            p.x[0] + p.u[0] * dt + 0.5 * a1[0] * dt ** 2, //2阶泰勒展开
+            p.x[1] + p.u[1] * dt + 0.5 * a1[1] * dt ** 2,
+          ];
+          //更新速度
+          p.u = [
+            p.u[0] * k + dt*0.5*(a1[0]+a2[0]),
+            p.u[1] * k + dt*0.5*(a1[1]+a2[1])
+          ];
 
-          p.u = [p.u[0] * k + dt * a1[0], p.u[1] * k + dt * a1[1]];
-          p.x = [p.x[0] + dt * p.u[0], p.x[1] + dt * p.u[1]];
+          // p.u = [p.u[0] * k + dt * a1[0], p.u[1] * k + dt * a1[1]];
+          // p.x = [p.x[0] + dt * p.u[0], p.x[1] + dt * p.u[1]];
 
           //边缘检测,反弹
           // if (p.x[0] < 0) {
@@ -249,49 +241,54 @@ class GASMSYS {
 
     //肌肉伸缩
     creatues.forEach((c) => {
-      c.particles.forEach((p) => {
-        c.particles.forEach((q) => {
-          if (p === q) return;
-          let m = null;
-          const id = p.id * q.id;
-          if (!c.muscles.has(id)) return;
-          m = c.muscles.get(id);
-          m.len =
-            (0.8 * (Math.sin(this.time * 0.2 / m.original_len) + 1) + 0.2) *
-            m.original_len;
-        });
+      c.springs.forEach((s) => {
+        if(s.b_muscle){
+          s.len =
+            (0.8 * (Math.sin((this.time * 0.2) / s.original_len) + 1) + 0.2) *
+            s.original_len;
+        }
       });
     });
   }
 
   draw_creatures(creatues){
-    const draw_spring = (s, color) => {
+    const scale =this.scale;
+    const off_y = (this.h-15)*(1-scale);
+    const off_x = this.offsetX + (this.w / 2 - this.offsetX) * (1 - scale);
+    const draw_spring = (s) => {
       this.ctx.beginPath();
-      this.ctx.moveTo(s.p1.x[0] + this.offsetX, s.p1.x[1]);
-      this.ctx.lineTo(s.p2.x[0] + this.offsetX, s.p2.x[1]);
+      this.ctx.moveTo(s.p1.x[0] * scale + off_x, s.p1.x[1] * scale + off_y);
+      this.ctx.lineTo(s.p2.x[0] * scale + off_x, s.p2.x[1] * scale + off_y);
       this.ctx.closePath();
       const d = ((s.p1.x[1]- s.p2.x[1])**2+(s.p1.x[0]- s.p2.x[0])**2)**0.5
-      this.ctx.lineWidth = 2.4 * Math.min(s.len / d, 4) + 0.1;
-      this.ctx.strokeStyle = color;
+      this.ctx.lineWidth = (2.4 * Math.min(s.len / d, 4) + 0.1) * scale;
+      if(s.b_muscle){
+        this.ctx.strokeStyle = "rgb(233,123,123)";
+      } else{
+        this.ctx.strokeStyle = "black";
+      }
       this.ctx.stroke();
       this.ctx.strokeStyle = "black";
     };
 
     const draw_particle = (p)=>{
       this.ctx.beginPath();
-      this.ctx.ellipse(p.x[0] + this.offsetX, p.x[1], 5, 5, 0, 0, Math.PI * 2);
+      this.ctx.ellipse(
+        p.x[0]* scale + off_x ,
+        p.x[1] * scale + off_y,
+        5 * scale,
+        5 * scale,
+        0,
+        0,
+        Math.PI * 2
+      );
       this.ctx.closePath();
       this.ctx.fillStyle = "black";
       this.ctx.fill();
     }
 
     creatues.forEach(c=>{
-      c.springs.forEach(s=>{
-        draw_spring(s,"black");
-      });
-      c.muscles.forEach(m=>{
-        draw_spring(m,"rgb(233,123,123)");
-      });
+      c.springs.forEach(draw_spring);
       c.particles.forEach(draw_particle);
     });
   }
@@ -312,14 +309,15 @@ class GASMSYS {
     this.ctx.lineTo(this.w,this.h-15);
     this.ctx.closePath();
     this.ctx.stroke();
-    for (let i = -this.w/2; i < this.w/2; i+=Math.floor(this.w/100)) {
+    const scale = this.scale;
+    for (let i = -this.w / 2; i < this.w / 2; i += Math.floor(this.w / 100)) {
       const x = this.w / 2 + i;
-      const y = this.h-15;
-      const d = x - this.offsetX - this.w / 2;
-      if(d%5==0){
-        this.ctx.fillText(""+d,x-4,this.h,100)
+      const y = this.h - 15;
+      const d = (x - this.w / 2) / scale - this.offsetX;
+      if (x % 5 == 0) {
+        this.ctx.fillText("" + d.toFixed(2), x - 4, this.h, 100);
         this.ctx.fillRect(x, y, 2, 5);
-      } else{
+      } else {
         this.ctx.fillRect(x, y, 2, 3);
       }
     }
@@ -339,7 +337,7 @@ class GASMSYS {
   }
 
   init_pop() {
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       const dna = new DNA();
       dna.random_init();
       this.pop.push(dna.gen_ms_creature());
@@ -389,7 +387,40 @@ class GASMSYS {
         this.offsetX += d[0];
       }
     };
-
+    this.canvas.onwheel = (e)=>{
+      if(e.deltaY>0){
+        this.scale *= 1.1;
+      }else{
+        this.scale /= 1.1;
+      }
+    }
+    window.onkeydown = (e) =>{
+      switch(e.key){
+        case "s":
+        case " ":
+          this.offsetX = 0;
+          break;
+        case "d":
+          {
+            let off = -1e10;
+            this.pop.forEach((c)=>{
+              off = Math.max(off, Math.floor(c.particles[0].x[0]));
+              console.log(off);
+            });
+            this.offsetX = this.w/2-off;
+          }
+          break;
+        case "a":
+          {
+            let off = 1e10;
+            this.pop.forEach((c)=>{
+              off = Math.min(off, Math.floor(c.particles[0].x[0]));
+            });
+            this.offsetX = -off+this.w/2;
+          }
+          break;
+      }
+    }
   }
 }
 
