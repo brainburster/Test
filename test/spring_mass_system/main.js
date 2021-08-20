@@ -2,7 +2,8 @@
 //以及Games201 https://www.bilibili.com/video/BV1ZK411H7Hc
 
 //杨式模数
-let k_y = 1000;
+let k_y = 800;
+let speed = 1.5;
 const m = 1;
 const g = [0, 9.8];
 //减震器大小
@@ -52,7 +53,7 @@ class Particle {
 
   draw(ctx) {
     ctx.beginPath();
-    ctx.ellipse(this.x[0], this.x[1], 5, 5, 0, 0, Math.PI * 2);
+    ctx.arc(this.x[0], this.x[1], 5, 0, Math.PI * 2);
     ctx.closePath();
     if (this.fixed) {
       ctx.fillStyle = "pink";
@@ -95,9 +96,9 @@ class SMSYS {
       lag += elapsed;
       if (lag < 400) {
         while (lag >= this.dt) {
-          //this.handle_input();
-          this.update();
           lag -= this.dt;
+          if (this.stop) continue;
+          this.update();
           this.time += this.dt;
         }
         this.render();
@@ -122,29 +123,25 @@ class SMSYS {
     ctx.fillStyle = "black";
     ctx.font = "16px Arial";
     ctx.fillText(
-      "左键创建质点，右键拖动，中(E)键删除，空格暂停，滚轮改变弹性系数,",
+      "左键创建质点，右键拖动，中(E)键删除，空格暂停, F键固定点，",
       10,
       20,
       800
     );
     ctx.fillText(
-      "F键 固定点，M键切换弹簧/肌肉，C键清空, Q键开关碰撞, G键开关重力",
+      "键切换弹簧/肌肉，C键清空, Q键开关碰撞, G键开关重力",
       10,
       40,
       800
     );
-    ctx.fillText("杨氏模量: " + k_y.toFixed(2), 10, 60, 300);
-
+    ctx.fillText("弹性系数(滚轮): " + k_y.toFixed(2), 10, 60, 300);
+    ctx.fillText("模拟速度(shift+滚轮): " + speed.toFixed(2), 10, 80, 300);
     this.particles.forEach((p) => {
       p.draw(ctx);
     });
   }
 
   update() {
-    if (this.stop) {
-      return;
-    }
-
     const ps = this.particles;
     const dt = this.dt * 0.001;
 
@@ -192,11 +189,11 @@ class SMSYS {
           (v[0] - s.p2.u[0]) * direction[0] + (v[1] - s.p2.u[1]) * direction[1];
 
         f = [
-          (f[0] + (f_spring - dashpot_damping * v_rel) * direction[0]) / m,
-          (f[1] + (f_spring - dashpot_damping * v_rel) * direction[1]) / m,
+          (f[0] + (f_spring - dashpot_damping * v_rel) * direction[0]),
+          (f[1] + (f_spring - dashpot_damping * v_rel) * direction[1]),
         ];
       });
-      return f;
+      return mul_s(f, 1 / m);
     };
 
     //子步骤
@@ -268,8 +265,8 @@ class SMSYS {
         }
       });
 
-    //进行10次子步骤
-    for (let index = 0; index < 10; index++) {
+    //进行n次子步骤
+    for (let index = 0; index < 10 * speed; index++) {
       substep();
     }
 
@@ -293,7 +290,7 @@ class SMSYS {
               mul_s(s.p2.u, la / (la + lb))
             ); //mul_scalar(add(s.p1.u,s.p2.u),0.5);
             const v = sub(p.u, v_s);
-            const p2_p1 = mul_s(v, dt * 60);
+            const p2_p1 = mul_s(v, dt * 60 * speed);
             const p2 = add(p.x, p2_p1);
             const c = p2_p1;
             const d = sub(p.x, s.p1.x);
@@ -308,9 +305,9 @@ class SMSYS {
               s.p1.u = add(s.p1.u, mul_s(r, (-0.1 * lb) / (la + lb)));
               s.p2.u = add(s.p2.u, mul_s(r, (-0.1 * la) / (la + lb)));
               p.u = mul_s(r, 0.85);
-              p.x = add(p.x, mul_s(p.u, dt * 30));
-              if (!s.p1.fixed) s.p1.x = add(s.p1.x, mul_s(p.u, -dt * 15));
-              if (!s.p2.fixed) s.p2.x = add(s.p2.x, mul_s(p.u, -dt * 15));
+              p.x = add(p.x, mul_s(p.u, dt * 30 * speed));
+              if (!s.p1.fixed) s.p1.x = add(s.p1.x, mul_s(p.u, -dt * 15 * speed));
+              if (!s.p2.fixed) s.p2.x = add(s.p2.x, mul_s(p.u, -dt * 15 * speed));
               return true;
             }
             return false;
@@ -318,12 +315,13 @@ class SMSYS {
         });
       });
     }
-
+    const a = 0.001 * 5 * speed;
     //肌肉伸缩
     ps.forEach((p) => {
       p.springs.forEach((s) => {
         if (s.b_muscle) {
-          s.len = 17 * (Math.sin(this.time * 0.001 * 5) + 1) + 16;
+          s.len = 16 * Math.sin(this.time * a) + 34;
+          //s.len += 17 * a * Math.cos(a * this.time);
         }
       });
     });
@@ -419,6 +417,19 @@ class SMSYS {
     };
 
     this.canvas.onwheel = (e) => {
+      if(e.shiftKey){
+        if (e.deltaY < 0) {
+          speed *= 1.1;
+        } else {
+          speed /= 1.1;
+        }
+        if (speed > 5) {
+          speed = 5;
+        } else if (speed < 0.1) {
+          speed = 0.1;
+        }
+        return;
+      }
       if (e.deltaY < 0) {
         k_y *= 1.1;
       } else {
@@ -426,8 +437,8 @@ class SMSYS {
       }
       if (k_y > 10000) {
         k_y = 10000;
-      } else if (k_y < 0.01) {
-        k_y = 0.01;
+      } else if (k_y < 0.1) {
+        k_y = 0.1;
       }
     };
 
@@ -485,6 +496,7 @@ function main() {
   p.fixed = true;
   smsys.particles.push(p);
   smsys.add_particle(459, 300);
+
   smsys.add_particle(200, 300);
   smsys.add_particle(250, 300);
   smsys.add_particle(225, 300 + 25 * 3 ** 0.5);
