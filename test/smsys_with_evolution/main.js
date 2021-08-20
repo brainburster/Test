@@ -1,4 +1,4 @@
-const setting = (function () {
+let setting = (function () {
   const o = {};
   o.b_fixed_len = false;
   o.pop_size = 16;
@@ -525,6 +525,12 @@ class GASMSYS {
       size * i++,
       400
     );
+    this.ctx.fillText(
+      "保存(k)，读取(l)",
+      size,
+      size * i++,
+      400
+    );
 
     //绘制弹簧质点
     this.ctx.fillStyle = "black";
@@ -564,7 +570,7 @@ class GASMSYS {
           this.pop[half + i] = p1.crossover(p2).mutation().gen_ms_creature();
         } else {
           p1.mutation();
-          for (let j = 0; j < this.same_fitness_count ** 0.4; j++) {
+          for (let j = 0; j < this.same_fitness_count ** 0.6; j++) {
             p1.mutation();
           }
           this.pop[half + i] = p1.gen_ms_creature();
@@ -636,6 +642,12 @@ class GASMSYS {
     };
     window.onkeydown = (e) => {
       switch (e.key) {
+        case "k":
+          this.save();
+          break;
+        case "l":
+          this.load();
+          break;
         case "t":
           setting.track_best = !setting.track_best;
           break;
@@ -712,6 +724,58 @@ class GASMSYS {
           break;
       }
     };
+  }
+  save(){
+    const o = {};
+    o.setting = setting;
+    o.dna_pop = this.pop.map((c) => c.dna);
+    const data = JSON.stringify(o);
+    const blob = new Blob([data], { type: "text/plain;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ga_smsys_save.json"
+    a.click();
+    //URL.revokeObjectURL(url);
+  }
+
+  load(){
+    const input_file = document.createElement("input");
+    input_file.type = "file";
+    input_file.style = "visibility:hidden";
+    document.body.appendChild(input_file);
+    input_file.click();
+    new Promise((resolve) => {
+      input_file.onchange = () => {
+        const file = input_file.files[0];
+        input_file.remove();
+        resolve(file);
+      };
+    }).then((file) => {
+      const fr = new FileReader();
+      return new Promise((resolve, reject) => {
+        if (/.json$/.test(file.name)) {
+          fr.onload = () => {
+            resolve(fr.result);
+          };
+          fr.readAsText(file);
+        } else {
+          reject(`[${file.name}]不是json文件`);
+        }
+      });
+    }).then((file_content) => {
+      return JSON.parse(file_content);
+    }).then((data) => {
+      setting = data.setting
+      this.time  = 0;
+      this.gen = 0;
+      this.pop = data.dna_pop.map(dna=>{
+        Object.setPrototypeOf(dna, DNA.prototype);
+        return dna.gen_ms_creature();
+      });
+    }).catch((reason) => {
+      console.log(reason);
+    })
   }
 }
 
