@@ -3,10 +3,10 @@ let setting = (function () {
   o.b_fixed_len = false;
   o.pop_size = 16;
   o.g = [0, 9.8];
-  o.m = 0.05;
-  o.k_y = 20;
-  o.k_muscle = 2;
-  o.max_time = 12000;
+  o.m = 1; //;0.05;
+  o.k_y = 800; //20;
+  o.k_muscle = 0.15; //2;
+  o.max_time = 10000;
   o.sim_speed = 1;
   o.track_best = false;
   return o;
@@ -30,8 +30,9 @@ class DNA {
 
   //随机初始化
   random_init() {
-    const n = Math.random() * 5 + 3;
-    for (let i = 0; i < n; i++) {
+    this.p.push([0, 520]);
+    const n = Math.random() * 5 + 2;
+    for (let i = 0; i < n - 1; i++) {
       const x = [
         Math.floor((Math.random() * 2 - 1) * 30),
         Math.floor((Math.random() * 2 - 1) * 30),
@@ -87,8 +88,11 @@ class DNA {
     if (r < 0.5) {
       //移动顶点位置
       const i = Math.floor(Math.random() * this.p.length);
-      this.p[i][0] += (Math.random() - 0.5) * 30;
-      this.p[i][1] += (Math.random() - 0.5) * 30;
+      if (Math.abs(this.p[i][0]) > 80 || Math.abs(this.p[i][1]) > 80) {
+        return this.mutation();
+      }
+      this.p[i][0] += (Math.random() - 0.5) * 3;
+      this.p[i][1] += (Math.random() - 0.5) * 3;
     } else if (r < 0.6) {
       //减少一个顶点
       const i = Math.floor(Math.random() * this.p.length);
@@ -99,7 +103,7 @@ class DNA {
       });
     } else if (r < 0.65) {
       if (this.p.length > 10) {
-        return this;
+        return this.mutation();
       }
       //增加一个顶点
       const x = this.p[this.p.length - 1];
@@ -122,7 +126,7 @@ class DNA {
       const i = Math.floor(Math.random() * this.p.length);
       const j = Math.floor(Math.random() * this.p.length);
       if (i === j || this.s.length > 20) {
-        return this;
+        return this.mutation();
       }
     } else if (r < 0.92) {
       //弹簧肌肉切换
@@ -180,7 +184,7 @@ class SMCreature {
     this.springs = new Map(); // {key:p1.id*p2.id,val: spring}
     this.fitness = 0;
     //
-    let pos = [600, 530];
+    let pos = [0, 0];
     dna.p.forEach((point) => {
       pos = [pos[0] + point[0], pos[1] + point[1]];
       this.particles.push(new Particle(pos));
@@ -214,17 +218,14 @@ class SMCreature {
   }
 
   get_fitness() {
-    if (this.particles.length < 3 || this.particles.length > 10)
-      return -100 * this.particles.length;
-    if (this.springs.size < 3 || this.springs.size > 16)
-      return -100 * this.springs.size;
+    if (this.particles.length < 3 || this.particles.length > 10) return -10000;
+    if (this.springs.size < 3 || this.springs.size > 16) return -10000;
     if (this.particles[0].x[1] > 2000) return -10000;
     let fitness = this.particles.reduce((a, b) => {
-      return Math.abs(a) < Math.abs(b.x[0] - 600) ? a : b.x[0] - 600;
+      return Math.abs(a) < Math.abs(b.x[0]) ? a : b.x[0];
     }, 1e10);
-    if (fitness < 0) fitness *= 0.75;
+    if (fitness < 0) fitness *= 0.95;
     fitness = Math.abs(fitness);
-    if (fitness < 1) fitness = -1000;
     // let n_m = 0;
     // this.springs.forEach((s) => {
     //   if (s.b_muscle) {
@@ -232,7 +233,7 @@ class SMCreature {
     //   }
     // });
     //fitness *= 1 - n_m * 0.05 -this.springs.size*0.01 - this.particles.length*0.01;
-    return fitness;
+    return fitness || -10000;
   }
 }
 
@@ -257,7 +258,7 @@ class GASMSYS {
     this.h = this.canvas.height;
     this.dt = 1; //ms
     this.time = 0;
-    this.offsetX = 0;
+    this.offsetX = this.w / 2;
     this.scale = 1;
     this.stop = false;
   }
@@ -356,7 +357,8 @@ class GASMSYS {
       c.springs.forEach((s) => {
         if (s.b_muscle) {
           s.len =
-            (0.8 * (Math.sin((this.time * k_muscle * setting.sim_speed) / s.original_len) + 1) +
+            (0.8 *
+              (Math.sin((this.time * k_muscle * setting.sim_speed) / 30) + 1) +
               0.2) *
             s.original_len;
         }
@@ -375,14 +377,13 @@ class GASMSYS {
       this.ctx.closePath();
       const d =
         ((s.p1.x[1] - s.p2.x[1]) ** 2 + (s.p1.x[0] - s.p2.x[0]) ** 2) ** 0.5;
-      this.ctx.lineWidth = (2.4 * Math.min(s.len / d, 4) + 0.1) * scale;
+      this.ctx.lineWidth = (2.4 * Math.min(s.len / d, 2) + 0.1) * scale;
       if (s.b_muscle) {
         this.ctx.strokeStyle = "rgb(233,123,123)";
       } else {
-        this.ctx.strokeStyle = "black";
+        this.ctx.strokeStyle = "rgb(25,25,25)";
       }
       this.ctx.stroke();
-      this.ctx.strokeStyle = "black";
     };
 
     const draw_particle = (p) => {
@@ -395,14 +396,20 @@ class GASMSYS {
         Math.PI * 2
       );
       this.ctx.closePath();
-      this.ctx.fillStyle = "black";
+      this.ctx.strokeStyle = "rgb(20,20,20)";
       this.ctx.fill();
     };
 
-    creatues.forEach((c) => {
+    creatues.forEach((c, i) => {
+      if (i < setting.pop_size / 3 && this.gen > 0) {
+        this.ctx.globalAlpha = 0.3;
+      } else {
+        this.ctx.globalAlpha = 1;
+      }
       c.springs.forEach(draw_spring);
       c.particles.forEach(draw_particle);
     });
+    this.ctx.globalAlpha = 1;
   }
 
   get_canvas() {
@@ -426,7 +433,7 @@ class GASMSYS {
     for (let i = -this.w / 2; i < this.w / 2; i += Math.floor(this.w / 100)) {
       const x = this.w / 2 + i;
       const y = this.h - 15;
-      const d = (x - this.w / 2) / scale - this.offsetX;
+      const d = (x - this.w / 2) / scale - this.offsetX + this.w / 2;
       if (x % 5 == 0) {
         this.ctx.fillText(d.toFixed(2), x - 4, this.h, 100);
         this.ctx.fillRect(x, y, 2, 5);
@@ -439,12 +446,11 @@ class GASMSYS {
     this.ctx.fillRect(this.w / 2, this.h - 14.5, 2, 4.5);
 
     //绘制文字
-    const size = 20;
+    const size = 18;
     let i = 1.5;
     this.ctx.fillStyle = "gray";
     this.ctx.font = size - 2 + "px Arial";
     this.ctx.fillText("代数: " + (this.gen + 1), size, size * i++, 200);
-    this.ctx.fillText("种群大小: " + this.pop.length, size, size * i++, 200);
     this.ctx.fillText(
       "时间: " + (this.time / 1000).toFixed(2) + "s",
       size,
@@ -482,24 +488,7 @@ class GASMSYS {
       size * i++,
       200
     );
-    this.ctx.fillText(
-      "弹性系数({/}): " + setting.k_y.toFixed(2),
-      size,
-      size * i++,
-      400
-    );
-    this.ctx.fillText(
-      "伸缩速度(;/'): " + setting.k_muscle.toFixed(2),
-      size,
-      size * i++,
-      400
-    );
-    this.ctx.fillText(
-      "质量(</>): " + setting.m.toFixed(2),
-      size,
-      size * i++,
-      200
-    );
+    i++;
     this.ctx.fillText(
       "固定弹簧长度(f): " + setting.b_fixed_len,
       size,
@@ -507,26 +496,41 @@ class GASMSYS {
       200
     );
     this.ctx.fillText("重开(r)，跳过当前轮(p)", size, size * i++, 200);
+    this.ctx.fillText("跟踪(t): " + setting.track_best, size, size * i++, 400);
+    this.ctx.fillText("保存(ctrl+s)，读取(ctrl+l)", size, size * i++, 400);
+    i++;
     this.ctx.fillText(
-      "每轮时间(↑/↓): " + (setting.max_time / 1000).toFixed(2) + "s",
+      "种群大小(shift+↑↓): " + setting.pop_size,
       size,
       size * i++,
       400
     );
     this.ctx.fillText(
-      "模拟速度, 影响精度(←/→): " + (setting.sim_speed).toFixed(2),
+      "弹簧弹性系数(ctrl+←→): " + setting.k_y.toFixed(2),
       size,
       size * i++,
       400
     );
     this.ctx.fillText(
-      "跟踪(t): " + setting.track_best,
+      "肌肉伸缩速度(shift+←→): " + setting.k_muscle.toFixed(2),
       size,
       size * i++,
       400
     );
     this.ctx.fillText(
-      "保存(k)，读取(l)",
+      "小球质量(ctrl+↑↓): " + setting.m.toFixed(2),
+      size,
+      size * i++,
+      400
+    );
+    this.ctx.fillText(
+      "每轮最大时间(↑/↓): " + (setting.max_time / 1000).toFixed(2) + "s",
+      size,
+      size * i++,
+      400
+    );
+    this.ctx.fillText(
+      "模拟速度, 影响精度(←/→): " + setting.sim_speed.toFixed(2),
       size,
       size * i++,
       400
@@ -539,9 +543,17 @@ class GASMSYS {
   }
 
   update() {
+    //保证种群大小和设定一致
+    for (let i = 0; i < setting.pop_size - this.pop.length; i++) {
+      const r = new DNA();
+      r.random_init();
+      this.pop.push(r.gen_ms_creature());
+    }
+    this.pop.length = setting.pop_size;
+
     if (this.time > setting.max_time) {
       this.time = 0;
-      this.offsetX = 0;
+      this.offsetX = this.w / 2;
       //this.scale = 1;
       this.gen += 1;
       this.pop.sort((a, b) => {
@@ -555,27 +567,35 @@ class GASMSYS {
       } else {
         this.same_fitness_count = 0;
       }
-      this.pop.length = setting.pop_size;
+
       const half = setting.pop_size / 2;
+      const children = [null];
+      for (let i = 0; i < this.pop.length / 3; i++) {
+        children[i] = this.pop[i].dna.gen_ms_creature();
+      }
       //
-      for (let i = 0; i < half; i++) {
-        const p1 = this.pop[i].dna.copy();
-        this.pop[i] = this.pop[i].dna.gen_ms_creature();
-        if (Math.random() < 0.05) {
+      const n_p = Math.ceil(setting.pop_size / 3);
+      const n_save = Math.floor(setting.pop_size * 0.75);
+      for (let i = n_p; i < setting.pop_size; i++) {
+        if (Math.random() < 0.05 || !this.pop[i % n_save]) {
           const r = new DNA();
           r.random_init();
-          this.pop[half + i] = r.gen_ms_creature();
-        } else if (Math.random() < 0.5) {
+          children.push(r.gen_ms_creature());
+          continue;
+        }
+        const p1 = this.pop[i % n_save].dna.copy();
+        if (Math.random() < 0.4) {
           const p2 = this.pop[Math.floor(Math.random() ** 2 * half)].dna.copy();
-          this.pop[half + i] = p1.crossover(p2).mutation().gen_ms_creature();
+          children.push(p1.crossover(p2).mutation().gen_ms_creature());
         } else {
           p1.mutation();
-          for (let j = 0; j < this.same_fitness_count ** 0.6; j++) {
+          for (let j = 0; j < this.same_fitness_count ** 0.25; j++) {
             p1.mutation();
           }
-          this.pop[half + i] = p1.gen_ms_creature();
+          children.push(p1.gen_ms_creature());
         }
       }
+      this.pop = children;
     }
 
     this.simulate(this.pop);
@@ -642,30 +662,61 @@ class GASMSYS {
     };
     window.onkeydown = (e) => {
       switch (e.key) {
-        case "k":
-          this.save();
-          break;
         case "l":
-          this.load();
+          if (e.ctrlKey) {
+            this.load();
+          } 
           break;
         case "t":
           setting.track_best = !setting.track_best;
           break;
         case "ArrowRight":
-          setting.sim_speed += 0.1;
-          setting.sim_speed = Math.min(setting.sim_speed, 5);
+          if (e.shiftKey) {
+            setting.k_muscle += 0.05;
+            setting.k_muscle = Math.min(setting.k_muscle, 10);
+          } else if (e.ctrlKey) {
+            setting.k_y *= 1.1;
+            setting.k_y = Math.min(setting.k_y, 5000);
+          } else {
+            setting.sim_speed += 0.1;
+            setting.sim_speed = Math.min(setting.sim_speed, 5);
+          }
           break;
         case "ArrowLeft":
-          setting.sim_speed -= 0.1;
-          setting.sim_speed = Math.max(setting.sim_speed, 0.1);
+          if (e.shiftKey) {
+            setting.k_muscle -= 0.05;
+            setting.k_muscle = Math.max(setting.k_muscle, 0.05);
+          } else if (e.ctrlKey) {
+            setting.k_y /= 1.1;
+            setting.k_y = Math.max(setting.k_y, 0.01);
+          } else {
+            setting.sim_speed -= 0.1;
+            setting.sim_speed = Math.max(setting.sim_speed, 0.1);
+          }
           break;
         case "ArrowUp":
-          setting.max_time += 100;
-          setting.max_time = Math.min(setting.max_time, 60000);
+          if (e.shiftKey) {
+            setting.pop_size += 1;
+            setting.pop_size = Math.min(setting.pop_size, 100);
+          } else if (e.ctrlKey) {
+            setting.m += 0.05;
+            setting.m = Math.min(setting.m, 10);
+          } else {
+            setting.max_time += 100;
+            setting.max_time = Math.min(setting.max_time, 60000);
+          }
           break;
         case "ArrowDown":
-          setting.max_time -= 100;
-          setting.max_time = Math.max(setting.max_time, 500);
+          if (e.shiftKey) {
+            setting.pop_size -= 1;
+            setting.pop_size = Math.max(setting.pop_size, 6);
+          } else if (e.ctrlKey) {
+            setting.m -= 0.05;
+            setting.m = Math.max(setting.m, 0.05);
+          } else {
+            setting.max_time -= 100;
+            setting.max_time = Math.max(setting.max_time, 500);
+          }
           break;
         case "r":
           this.pop.length = 0;
@@ -701,8 +752,13 @@ class GASMSYS {
           this.stop = !this.stop;
           break;
         case "s":
-          this.scale = 1;
-          this.offsetX = 0;
+          if (e.ctrlKey) {
+            this.save();
+            e.preventDefault();
+          } else {
+            this.scale = 1;
+            this.offsetX = this.w / 2;
+          }
           break;
         case "d":
           {
@@ -725,8 +781,9 @@ class GASMSYS {
       }
     };
   }
-  save(){
+  save() {
     const o = {};
+    o.gen = this.gen;
     o.setting = setting;
     o.dna_pop = this.pop.map((c) => c.dna);
     const data = JSON.stringify(o);
@@ -734,12 +791,12 @@ class GASMSYS {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "ga_smsys_save.json"
+    a.download = "ga_smsys_save.json";
     a.click();
     //URL.revokeObjectURL(url);
   }
 
-  load(){
+  load() {
     const input_file = document.createElement("input");
     input_file.type = "file";
     input_file.style = "visibility:hidden";
@@ -751,31 +808,35 @@ class GASMSYS {
         input_file.remove();
         resolve(file);
       };
-    }).then((file) => {
-      const fr = new FileReader();
-      return new Promise((resolve, reject) => {
-        if (/.json$/.test(file.name)) {
-          fr.onload = () => {
-            resolve(fr.result);
-          };
-          fr.readAsText(file);
-        } else {
-          reject(`[${file.name}]不是json文件`);
-        }
-      });
-    }).then((file_content) => {
-      return JSON.parse(file_content);
-    }).then((data) => {
-      setting = data.setting
-      this.time  = 0;
-      this.gen = 0;
-      this.pop = data.dna_pop.map(dna=>{
-        Object.setPrototypeOf(dna, DNA.prototype);
-        return dna.gen_ms_creature();
-      });
-    }).catch((reason) => {
-      console.log(reason);
     })
+      .then((file) => {
+        const fr = new FileReader();
+        return new Promise((resolve, reject) => {
+          if (/.json$/.test(file.name)) {
+            fr.onload = () => {
+              resolve(fr.result);
+            };
+            fr.readAsText(file);
+          } else {
+            reject(`[${file.name}]不是json文件`);
+          }
+        });
+      })
+      .then((file_content) => {
+        return JSON.parse(file_content);
+      })
+      .then((data) => {
+        setting = data.setting;
+        this.time = 0;
+        this.gen = data.gen;
+        this.pop = data.dna_pop.map((dna) => {
+          Object.setPrototypeOf(dna, DNA.prototype);
+          return dna.gen_ms_creature();
+        });
+      })
+      .catch((reason) => {
+        console.log(reason);
+      });
   }
 }
 
