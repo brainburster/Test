@@ -3,7 +3,7 @@
 
 //杨式模数
 let y_m = 600;
-let speed = 1.5;
+let speed = 1;
 const m = 1;
 const g = [0, 9.8];
 //减震器大小
@@ -95,7 +95,7 @@ class SMSYS {
       const elapsed = current - previous;
       previous = current;
       lag += elapsed;
-      if (lag < 400) {
+      if (lag < 50) {
         while (lag >= this.dt) {
           lag -= this.dt;
           if (this.stop) continue;
@@ -105,6 +105,10 @@ class SMSYS {
         this.render();
       } else {
         console.log("计算超时");
+        if (speed > 0.2) {
+          speed -= 0.1;
+          console.log("降低模拟速度");
+        }
         lag = 0;
       }
 
@@ -247,27 +251,27 @@ class SMSYS {
         if (p.x[0] < 0) {
           p.x[0] = 1;
           //p.x_old[0] = 1;
-          p.u = [-p.u[0], p.u[1]];
+          p.u = [-p.u[0]*0.95, p.u[1]*0.95];
         }
         if (p.x[0] > this.w - 1) {
           p.x[0] = this.w - 1;
           //p.x_old[0] = this.w - 1;
-          p.u = [-p.u[0], p.u[1]];
+          p.u = [-p.u[0]*0.95, p.u[1]*0.95];
         }
         if (p.x[1] > this.h - 1) {
           p.x[1] = this.h - 1;
           //p.x_old[1] = this.h - 1;
-          p.u = [p.u[0], -p.u[1]];
+          p.u = [p.u[0]*0.95, -p.u[1]*0.95];
         }
         if (p.x[1] < 0) {
           p.x[1] = 1;
           //p.x_old[1] = 1;
-          p.u = [p.u[0], -p.u[1]];
+          p.u = [p.u[0]*0.95, -p.u[1]*0.95];
         }
       });
 
     //进行n次子步骤
-    for (let index = 0; index < 10*speed; index++) {
+    for (let index = 0; index < 10 * speed; index++) {
       substep();
     }
 
@@ -316,16 +320,16 @@ class SMSYS {
         });
       });
     }
-    const a = 5;
+
     //肌肉伸缩
     ps.forEach((p) => {
       p.springs.forEach((s) => {
         if (s.b_muscle) {
-          s.len = 16 * Math.sin(this.sim_time * a) + 34;
+          s.len = 16 * Math.sin(this.sim_time * 0.5) + 34;
         }
       });
     });
-    this.sim_time+=dt*speed;
+    this.sim_time += dt * 10 * speed;
   }
 
   add_particle(x, y) {
@@ -356,10 +360,9 @@ class SMSYS {
   handle_input() {
     const mouse_state = { pos: [0, 0] };
 
-    const delete_p_s = () => {
+    const delete_p_s = (x, y) => {
       for (let i = 0; i < this.particles.length; i++) {
         const p = this.particles[i];
-        const [x, y] = mouse_state.pos;
         //删除弹簧
         for (let j = 0; j < p.springs.length; j++) {
           const s = p.springs[j];
@@ -411,21 +414,28 @@ class SMSYS {
       mouse_state.pos = [e.offsetX, e.offsetY];
       const [x, y] = mouse_state.pos;
       if (e.buttons === 4) {
-        delete_p_s();
+        delete_p_s(x, y);
       } else if (e.buttons === 1) {
-        this.add_particle(x, y);
+        if(e.shiftKey){
+          const p1 = new Particle([x, y]);
+          this.particles.push(p1);
+        }else if(e.ctrlKey){
+          delete_p_s(x, y);
+        }else{
+          this.add_particle(x, y);
+        }
       }
     };
 
     this.canvas.onwheel = (e) => {
       if(!e.shiftKey){
         if (e.deltaY < 0) {
-          speed *= 1.1;
+          speed += 0.1;
         } else {
-          speed /= 1.1;
+          speed -= 0.1;
         }
-        if (speed > 5) {
-          speed = 5;
+        if (speed > 10) {
+          speed = 10;
         } else if (speed < 0.1) {
           speed = 0.1;
         }
@@ -448,7 +458,7 @@ class SMSYS {
       const d = [x - mouse_state.pos[0], y - mouse_state.pos[1]];
       mouse_state.pos = [x, y];
       if (e.buttons === 4) {
-        delete_p_s();
+        delete_p_s(x, y);
       } else if (e.buttons === 2) {
         this.particles.forEach((p) => {
           const dis = ((p.x[0] - x) ** 2 + (p.x[1] - y) ** 2) ** 0.5;
@@ -473,7 +483,7 @@ class SMSYS {
           this.particles.push(p1);
           break;
         case "e":
-          delete_p_s();
+          delete_p_s(...mouse_state.pos);
           break;
         case "m":
           add_muscle(...mouse_state.pos);

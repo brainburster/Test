@@ -4,8 +4,8 @@ let setting = (function () {
   o.pop_size = 16;
   o.g = [0, 9.8];
   o.m = 1; //;0.05;
-  o.k_y = 800; //20;
-  o.k_muscle = 0.15; //2;
+  o.y_m = 800; //20;
+  o.k_muscle = 15;
   o.max_time = 10000;
   o.sim_speed = 1;
   o.track_best = false;
@@ -30,14 +30,12 @@ class DNA {
 
   //随机初始化
   random_init() {
-    this.p.push([0, 520]);
+    this.p.push([0, 500]);
     const n = Math.random() * 5 + 2;
     for (let i = 0; i < n - 1; i++) {
-      const x = [
-        Math.floor((Math.random() * 2 - 1) * 30),
-        Math.floor((Math.random() * 2 - 1) * 30),
-      ];
-      this.p.push(x);
+      const x = (Math.random() * 2 - 1) * 30;
+      const y = (Math.random() * 2 - 1) * 30;
+      this.p.push([x,y]);
     }
 
     const existed = [];
@@ -85,15 +83,15 @@ class DNA {
   //突变
   mutation() {
     const r = Math.random();
-    if (r < 0.5) {
+    if (r < 0.7) {
       //移动顶点位置
       const i = Math.floor(Math.random() * this.p.length);
       if (Math.abs(this.p[i][0]) > 80 || Math.abs(this.p[i][1]) > 80) {
         return this.mutation();
       }
-      this.p[i][0] += (Math.random() - 0.5) * 3;
-      this.p[i][1] += (Math.random() - 0.5) * 3;
-    } else if (r < 0.6) {
+      this.p[i][0] += (Math.random() - 0.5) * 5;
+      this.p[i][1] += (Math.random() - 0.5) * 5;
+    } else if (r < 0.75) {
       //减少一个顶点
       const i = Math.floor(Math.random() * this.p.length);
       this.p.slice(i, 1);
@@ -101,7 +99,7 @@ class DNA {
         if (ijk[0] === i) this.s.slice(index, 1);
         else if (ijk[1] === i) this.s.slice(index, 1);
       });
-    } else if (r < 0.65) {
+    } else if (r < 0.8) {
       if (this.p.length > 10) {
         return this.mutation();
       }
@@ -117,18 +115,18 @@ class DNA {
         this.s.push([this.p.length, i, Math.random() > 0.8 ? 1 : 0]);
       }
       this.p.push(x_new);
-    } else if (r < 0.78) {
+    } else if (r < 0.85) {
       //减少一条弹簧
       const i = Math.floor(Math.random() * this.s.length);
       this.s.slice(i, 1);
-    } else if (r < 0.82) {
+    } else if (r < 0.9) {
       //增加一条弹簧
       const i = Math.floor(Math.random() * this.p.length);
       const j = Math.floor(Math.random() * this.p.length);
       if (i === j || this.s.length > 20) {
         return this.mutation();
       }
-    } else if (r < 0.92) {
+    } else if (r < 0.95) {
       //弹簧肌肉切换
       const i = Math.floor(Math.random() * this.s.length);
       this.s[i][2] = this.s[i][2] === 0 ? 1 : 0;
@@ -186,7 +184,7 @@ class SMCreature {
     //
     let pos = [0, 0];
     dna.p.forEach((point) => {
-      pos = [pos[0] + point[0], pos[1] + point[1]];
+      pos = [(pos[0] + point[0])%81, pos[1] + point[1]];
       this.particles.push(new Particle(pos));
     });
 
@@ -219,12 +217,12 @@ class SMCreature {
 
   get_fitness() {
     if (this.particles.length < 3 || this.particles.length > 10) return -10000;
-    if (this.springs.size < 3 || this.springs.size > 16) return -10000;
+    if (this.springs.size < 3 || this.springs.size > 20) return -10000;
     if (this.particles[0].x[1] > 2000) return -10000;
     let fitness = this.particles.reduce((a, b) => {
       return Math.abs(a) < Math.abs(b.x[0]) ? a : b.x[0];
     }, 1e10);
-    if (fitness < 0) fitness *= 0.95;
+    if (fitness < 0) fitness *= 0.9;
     fitness = Math.abs(fitness);
     // let n_m = 0;
     // this.springs.forEach((s) => {
@@ -258,15 +256,16 @@ class GASMSYS {
     this.h = this.canvas.height;
     this.dt = 1; //ms
     this.time = 0;
+    this.sim_time = 0;
     this.offsetX = this.w / 2;
     this.scale = 1;
     this.stop = false;
   }
 
   simulate(creatues) {
-    const dt = this.dt * 0.001 * setting.sim_speed;
+    const dt = this.dt * 0.001;
     const g = setting.g;
-    const k_y = setting.k_y;
+    const k_y = setting.y_m;
     const k_muscle = setting.k_muscle;
     const m = setting.m;
     const dashpot_damping = 0.8;
@@ -348,7 +347,7 @@ class GASMSYS {
       });
 
     //进行10次子步骤
-    for (let index = 0; index < 10; index++) {
+    for (let index = 0; index < 10* setting.sim_speed; index++) {
       substep();
     }
 
@@ -358,12 +357,13 @@ class GASMSYS {
         if (s.b_muscle) {
           s.len =
             (0.8 *
-              (Math.sin((this.time * k_muscle * setting.sim_speed) / 30) + 1) +
+              (Math.sin((this.sim_time * k_muscle) / 30) + 1) +
               0.2) *
             s.original_len;
         }
       });
     });
+    this.sim_time += dt * 10 * setting.sim_speed;
   }
 
   draw_creatures(creatues) {
@@ -402,7 +402,7 @@ class GASMSYS {
 
     creatues.forEach((c, i) => {
       if (i < setting.pop_size / 3 && this.gen > 0) {
-        this.ctx.globalAlpha = 0.3;
+        this.ctx.globalAlpha = 0.25;
       } else {
         this.ctx.globalAlpha = 1;
       }
@@ -483,7 +483,7 @@ class GASMSYS {
       200
     );
     this.ctx.fillText(
-      "变异强度: " + (this.same_fitness_count + 1),
+      "同分次数: " + (this.same_fitness_count),
       size,
       size * i++,
       200
@@ -506,7 +506,7 @@ class GASMSYS {
       400
     );
     this.ctx.fillText(
-      "弹簧弹性系数(ctrl+←→): " + setting.k_y.toFixed(2),
+      "弹簧弹性系数(ctrl+←→): " + setting.y_m.toFixed(2),
       size,
       size * i++,
       400
@@ -530,7 +530,7 @@ class GASMSYS {
       400
     );
     this.ctx.fillText(
-      "模拟速度, 影响精度(←/→): " + setting.sim_speed.toFixed(2),
+      "模拟速度(←/→): " + setting.sim_speed.toFixed(2),
       size,
       size * i++,
       400
@@ -553,6 +553,7 @@ class GASMSYS {
 
     if (this.time > setting.max_time) {
       this.time = 0;
+      this.sim_time = 0;
       this.offsetX = this.w / 2;
       //this.scale = 1;
       this.gen += 1;
@@ -584,12 +585,13 @@ class GASMSYS {
           continue;
         }
         const p1 = this.pop[i % n_save].dna.copy();
-        if (Math.random() < 0.4) {
+        if (Math.random() < 0.8) {
           const p2 = this.pop[Math.floor(Math.random() ** 2 * half)].dna.copy();
           children.push(p1.crossover(p2).mutation().gen_ms_creature());
         } else {
           p1.mutation();
-          for (let j = 0; j < this.same_fitness_count ** 0.25; j++) {
+          const n =   Math.min(this.same_fitness_count** 0.5,5);
+          for (let j = 0; j < n; j++) {
             p1.mutation();
           }
           children.push(p1.gen_ms_creature());
@@ -621,7 +623,7 @@ class GASMSYS {
       const elapsed = current - previous;
       previous = current;
       lag += elapsed;
-      if (lag < 400) {
+      if (lag < 60) {
         while (lag >= this.dt) {
           lag -= this.dt;
           if (this.stop) continue;
@@ -631,6 +633,10 @@ class GASMSYS {
         this.render();
       } else {
         console.log("计算超时");
+        if (setting.sim_speed > 0.2) {
+          setting.sim_speed -= 0.1;       
+          console.log("尝试降低模拟速度");
+        }
         lag = 0;
       }
 
@@ -672,11 +678,11 @@ class GASMSYS {
           break;
         case "ArrowRight":
           if (e.shiftKey) {
-            setting.k_muscle += 0.05;
-            setting.k_muscle = Math.min(setting.k_muscle, 10);
+            setting.k_muscle += 1;
+            setting.k_muscle = Math.min(setting.k_muscle, 100);
           } else if (e.ctrlKey) {
-            setting.k_y *= 1.1;
-            setting.k_y = Math.min(setting.k_y, 5000);
+            setting.y_m *= 1.1;
+            setting.y_m = Math.min(setting.y_m, 5000);
           } else {
             setting.sim_speed += 0.1;
             setting.sim_speed = Math.min(setting.sim_speed, 5);
@@ -684,11 +690,11 @@ class GASMSYS {
           break;
         case "ArrowLeft":
           if (e.shiftKey) {
-            setting.k_muscle -= 0.05;
-            setting.k_muscle = Math.max(setting.k_muscle, 0.05);
+            setting.k_muscle -= 1;
+            setting.k_muscle = Math.max(setting.k_muscle, 1);
           } else if (e.ctrlKey) {
-            setting.k_y /= 1.1;
-            setting.k_y = Math.max(setting.k_y, 0.01);
+            setting.y_m /= 1.1;
+            setting.y_m = Math.max(setting.y_m, 0.01);
           } else {
             setting.sim_speed -= 0.1;
             setting.sim_speed = Math.max(setting.sim_speed, 0.1);
@@ -721,6 +727,7 @@ class GASMSYS {
         case "r":
           this.pop.length = 0;
           this.time = 0;
+          this.sim_time = 0;
           this.gen = 0;
           this.init_pop();
           break;
@@ -731,10 +738,10 @@ class GASMSYS {
           setting.b_fixed_len = !setting.b_fixed_len;
           break;
         case "[":
-          setting.k_y /= 1.1;
+          setting.y_m /= 1.1;
           break;
         case "]":
-          setting.k_y *= 1.1;
+          setting.y_m *= 1.1;
           break;
         case ";":
           setting.k_muscle /= 1.1;
@@ -828,6 +835,7 @@ class GASMSYS {
       .then((data) => {
         setting = data.setting;
         this.time = 0;
+        this.sim_time = 0;
         this.gen = data.gen;
         this.pop = data.dna_pop.map((dna) => {
           Object.setPrototypeOf(dna, DNA.prototype);
