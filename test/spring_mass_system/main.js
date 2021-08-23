@@ -2,7 +2,7 @@
 //以及Games201 https://www.bilibili.com/video/BV1ZK411H7Hc
 
 //杨式模数
-let k_y = 800;
+let y_m = 600;
 let speed = 1.5;
 const m = 1;
 const g = [0, 9.8];
@@ -76,6 +76,7 @@ class SMSYS {
     this.h = h;
     this.dt = 1; //ms
     this.time = 0;
+    this.sim_time = 0;
     this.stop = false;
     this.enable_cllision = true;
     this.enable_gravity = true;
@@ -134,8 +135,8 @@ class SMSYS {
       40,
       800
     );
-    ctx.fillText("弹性系数(滚轮): " + k_y.toFixed(2), 10, 60, 300);
-    ctx.fillText("模拟速度(shift+滚轮): " + speed.toFixed(2), 10, 80, 300);
+    ctx.fillText("弹性系数(杨氏模数)(shift+滚轮): " + y_m.toFixed(2), 10, 60, 300);
+    ctx.fillText("模拟速度(滚轮): " + speed.toFixed(2), 10, 80, 300);
     this.particles.forEach((p) => {
       p.draw(ctx);
     });
@@ -184,7 +185,7 @@ class SMSYS {
         const p1_p2 = [p1[0] - p2[0], p1[1] - p2[1]];
         const length = (p1_p2[0] ** 2 + p1_p2[1] ** 2) ** 0.5;
         const direction = [p1_p2[0] / length, p1_p2[1] / length];
-        const f_spring = -k_y * (length / rest_len - 1);
+        const f_spring = -y_m * (length / rest_len - 1);
         const v_rel =
           (v[0] - s.p2.u[0]) * direction[0] + (v[1] - s.p2.u[1]) * direction[1];
 
@@ -266,7 +267,7 @@ class SMSYS {
       });
 
     //进行n次子步骤
-    for (let index = 0; index < 10 * speed; index++) {
+    for (let index = 0; index < 10*speed; index++) {
       substep();
     }
 
@@ -315,16 +316,16 @@ class SMSYS {
         });
       });
     }
-    const a = 0.001 * 5 * speed;
+    const a = 5;
     //肌肉伸缩
     ps.forEach((p) => {
       p.springs.forEach((s) => {
         if (s.b_muscle) {
-          s.len = 16 * Math.sin(this.time * a) + 34;
-          //s.len += 17 * a * Math.cos(a * this.time);
+          s.len = 16 * Math.sin(this.sim_time * a) + 34;
         }
       });
     });
+    this.sim_time+=dt*speed;
   }
 
   add_particle(x, y) {
@@ -417,7 +418,7 @@ class SMSYS {
     };
 
     this.canvas.onwheel = (e) => {
-      if(e.shiftKey){
+      if(!e.shiftKey){
         if (e.deltaY < 0) {
           speed *= 1.1;
         } else {
@@ -431,14 +432,14 @@ class SMSYS {
         return;
       }
       if (e.deltaY < 0) {
-        k_y *= 1.1;
+        y_m *= 1.1;
       } else {
-        k_y /= 1.1;
+        y_m /= 1.1;
       }
-      if (k_y > 10000) {
-        k_y = 10000;
-      } else if (k_y < 0.1) {
-        k_y = 0.1;
+      if (y_m > 10000) {
+        y_m = 10000;
+      } else if (y_m < 0.1) {
+        y_m = 0.1;
       }
     };
 
