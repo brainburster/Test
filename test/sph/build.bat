@@ -1,0 +1,1 @@
+emcc sph.cpp -o sph.js -O3 -s EXPORTED_FUNCTIONS="[\"_foo\"]" -s TOTAL_MEMORY=64MB
