@@ -1,7 +1,6 @@
 var Module = {};
 
 const sph_view = (function CreateSphView() {
-  const o = {};
   const view_div = document.createElement("div")
   const canvas = document.createElement("canvas");
   const setting = document.createElement("div");
@@ -9,42 +8,82 @@ const sph_view = (function CreateSphView() {
   view_div.appendChild(canvas);
   view_div.appendChild(setting);
 
-  o.get_view_div = () => {
+  const init = () => {
+    canvas.width = 800;
+    canvas.height = 600;
+    Module._init();
+  };
+
+  // const clear = () => {
+  //   Module._clear();
+  // };
+
+  const update = ()=>{
+    for (let index = 0; index < 5; index++) {
+      Module._update();
+    }
+  }
+
+  const render = ()=>{
+    ctx.clearRect(0, 0, 800, 600);
+    const ptr = Module._get_data() >> 2;
+    const len = Module._get_data_length();
+    const p_size = Module._get_particle_size() >> 2;
+    //渲染粒子
+    for (let i = 0; i < len; i++) {
+      const index = ptr+i*p_size;
+      const x = Module.HEAPF32[index];
+      const y = Module.HEAPF32[index + 1];
+      ctx.beginPath();
+      ctx.arc(x, 600 - y, 10, 0, 2 * Math.PI);
+      ctx.closePath();
+      ctx.fillStyle = "lightblue";
+      ctx.fill();
+    }
+  }
+
+  const get_view_div = () => {
     return view_div;
   };
 
-  o.init = () => {
-    //Module._init();
+  const run = ()=>{
+    let previous = new Date().getTime();
+    let lag = 0.0;
+    const delay = 1;
+
+    const gameloop = () => {
+      const current = new Date().getTime();
+      const elapsed = current - previous;
+      previous = current;
+      lag += elapsed;
+      if (lag < 300) {
+        while (lag >= delay) {
+          lag -= delay;
+          update();
+        }
+        render();
+      } else {
+        console.log("计算超时");
+        lag = 0;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    init();
+    gameloop();
+  }
+  
+
+  return {
+    get_view_div,
+    run
   };
-
-  o.clear = () => {
-    //Module._clear();
-  };
-
-  o.unpdate = ()=>{
-    //...
-    //Module._update();
-  }
-
-  o.render = ()=>{
-    //渲染粒子
-  }
-
-  o.run = ()=>{
-    //模拟循环
-    Module._foo();
-  }
-
-  return o;
 })();
 
 function main() {
   //...
   Module.onRuntimeInitialized = function () {
-    Module = this;
-    setTimeout(()=>{
-      document.body.appendChild(sph_view.get_view_div());
-      sph_view.run();
-    },1000)
+    document.body.appendChild(sph_view.get_view_div());
+    sph_view.run();
   };
 }
