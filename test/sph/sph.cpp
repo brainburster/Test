@@ -146,7 +146,6 @@ struct Vec2
         return powf(x * x + y * y, 0.5f);
     }
 };
-
 struct Setting
 {
     static constexpr float h = 25; //光滑核半径
@@ -157,10 +156,10 @@ struct Setting
     static constexpr float _2pi = pi * 2;
     static constexpr float p0 = 1000;
     static constexpr int gama = 8;
-    static constexpr float B = 0.005f;
-    static constexpr float ki_vi = 0.1f; //kinematic viscosity
+    static constexpr float B = 0.01f;
+    static constexpr float ki_vi = 0.01f; //kinematic viscosity
     static constexpr Vec2 g = {0, -9.8f};
-    static constexpr float dt = 0.001f;
+    static constexpr float dt = 0.0012f;
 };
 
 //假设粒子质量始终为1, m=1
@@ -401,7 +400,7 @@ class SPH
 public:
     enum
     {
-        width = 800,
+        width = 600,
         height = 600
     };
 
@@ -414,20 +413,13 @@ public:
     void init()
     {
         srand(time(0));
-        // _particles.reserve(200);
-        // _neighborboods.reserve(200);
         _particles.resize(100);
-        _neighborboods.resize(100);
-        // for (auto &p : _particles)
-        // {
-        //     p.x = {(float)(rand() % width), (float)(rand() % height * 0.5f)};
-        // }
         for (int i = -5; i < 5; i++)
         {
             for (int j = 0; j < 10; j++)
             {
                 auto &p = _particles[i + 5 + j * 10];
-                p.x = {i * 20.f + width / 2, j * 20.f + height / 2};
+                p.x = {i * 30.f + width / 2, j * 30.f + height *0.45f};
             }
         }
         
@@ -472,59 +464,49 @@ private:
         }
     }
 
-    void update_neighbors(size_t i)
-    {
-        //...
-        auto &neighbors = _neighborboods[i];
-        neighbors.get_range().clear();
-        _grids.get_neighbors(&_particles[i], neighbors);
-    }
+    // void update_neighbors(size_t i)
+    // {
+    //     //...
+    //     auto &neighbors = _neighborboods[i];
+    //     neighbors.get_range().clear();
+    //     _grids.get_neighbors(&_particles[i], neighbors);
+    // }
 
     //WCSPH
     void update_particles()
     {
         using U = Utility;
         using S = Setting;
-        //保证粒子和邻居表一一对应
-        const size_t len = _particles.size();
-        if (_neighborboods.size() < len)
-        {
-            _neighborboods.resize(len);
-        }
+        // //保证粒子和邻居表一一对应
+        // const size_t len = _particles.size();
+        // if (_neighborboods.size() < len)
+        // {
+        //     _neighborboods.resize(len);
+        // }
 
-        for (size_t i = 0; i < len; ++i)
+        for (auto &p : _particles)
         {
-            auto &p = _particles[i];
-            auto &neighbors = _neighborboods[i];
-            //更新邻居
-            update_neighbors(i);
             //更新密度
             float rho = 0;
-            for (auto q : neighbors.get_range())
-            {
-                const float r = p.x.distance(q->x);
+            _grids.for_each_neighbor(&p,[&rho](Particle& p1, Particle& p2, float r){
                 rho += U::W_Poly6(r); //*m, 假设质点质量都为1
-            }
+            });
             p.rho = rho;
             //更新压强, 通过状态方程
             p.p = S::B * (pow(p.rho / S::p0, S::gama) - 1);
         }
 
-        for (size_t i = 0; i < len; ++i)
+        for (auto &p : _particles)
         {
-            auto &p = _particles[i];
-            auto &neighbors = _neighborboods[i];
             Vec2 lapl_v = {};
             Vec2 grad_p = {};
-            for (auto q : neighbors.get_range())
-            {
-                const Vec2 d = p.x - q->x;
-                const float r = d.norm(); //p.x.distance(q->x);
-                lapl_v += q->v * U::Lapl_W_Visco(r) / q->rho;
-                if (&p == q || r < 0.1f)
-                    continue;
-                grad_p += U::Grad_W_Spiky(r) * (p.p / (p.rho * p.rho) + q->p / (q->rho * q->rho)) * d;
-            }
+            _grids.for_each_neighbor(&p,[&lapl_v,&grad_p](Particle& p1, Particle& p2, float r){
+                lapl_v += p2.v * U::Lapl_W_Visco(r) / p2.rho;
+                if (&p1 == &p2 || r < 0.1f)
+                    return;
+                const Vec2 d = p1.x - p2.x;
+                grad_p += U::Grad_W_Spiky(r) * (p1.p / (p1.rho * p1.rho) + p2.p / (p2.rho * p2.rho)) * d;
+            });
             //grad_p *= p.rho;
             //剪切力和压力
             const Vec2 f_v = S::ki_vi * lapl_v;
@@ -555,12 +537,8 @@ private:
                 constexpr Vec2 d = {0, 1};
                 f_b += U::Grad_W_Spiky(r)/r * 1e6 * d;
             }
-
-            constexpr Vec2 left = {-1, 0};
-            constexpr Vec2 right = {1, 0};
-            constexpr Vec2 up = {0, 1};
-            constexpr Vec2 down = {0, -1};
-            const Vec2 a = f_v + f_p + f_b + S::g;
+            const Vec2 f_rand = {rand()%100*0.001f,rand()%100*0.001f};
+            const Vec2 a = f_v + f_p + f_b + S::g + f_rand;
             p.v += a * S::dt; 
             p.v *=0.9999f;
             p.x += p.v * S::dt;
@@ -570,7 +548,7 @@ private:
     SPH() = default;
     std::vector<Particle> _particles;
     Grids _grids;
-    std::vector<Neighborhood> _neighborboods;
+    //std::vector<Neighborhood> _neighborboods;
 };
 
 extern "C"

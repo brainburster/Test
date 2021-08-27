@@ -7,10 +7,12 @@ const sph_view = (function CreateSphView() {
   const ctx = canvas.getContext("2d");
   view_div.appendChild(canvas);
   view_div.appendChild(setting);
+  const w = 600;
+  const h = 600;
 
   const init = () => {
-    canvas.width = 800;
-    canvas.height = 600;
+    canvas.width = w;
+    canvas.height = h;
     Module._init();
   };
 
@@ -19,13 +21,13 @@ const sph_view = (function CreateSphView() {
   // };
 
   const update = ()=>{
-    for (let index = 0; index < 5; index++) {
+    for (let index = 0; index < 6; index++) {
       Module._update();
     }
   }
 
   const render = ()=>{
-    ctx.clearRect(0, 0, 800, 600);
+    ctx.clearRect(0, 0, w, h);
     const ptr = Module._get_data() >> 2;
     const len = Module._get_data_length();
     const p_size = Module._get_particle_size() >> 2;
