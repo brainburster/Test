@@ -148,7 +148,7 @@ struct Vec2
 };
 struct Setting
 {
-    static constexpr float h = 50; //光滑核半径
+    static constexpr float h = 30; //光滑核半径
     static constexpr float _2h = h * 2;
     static constexpr float h_2 = h * h;
     static constexpr float h_3 = h_2 * h;
@@ -156,7 +156,7 @@ struct Setting
     static constexpr float _2pi = pi * 2;
     static constexpr float p0 = 100;
     static constexpr int gama = 8;
-    static constexpr float B = 0.025f;
+    static constexpr float B = 0.1f;
     static constexpr float ki_vi = 0.01f; //kinematic viscosity
     static constexpr Vec2 g = {0, -9.8f};
     static constexpr float dt = 0.001f;
@@ -400,7 +400,7 @@ class SPH
 public:
     enum
     {
-        width = 600,
+        width = 1200,
         height = 800
     };
 
@@ -419,7 +419,8 @@ public:
             for (int j = 0; j < 10; j++)
             {
                 auto &p = _particles[i + 5 + j * 10];
-                p.x = {i * 40.f + width / 2, j * 40.f + height * 0.5f};
+                p.x = {i * 30.f + width / 2, j * 30.f + height * 0.5f};
+                p.v = {rand() % 100 * 0.001f, rand() % 100 * 0.001f};
             }
         }
         

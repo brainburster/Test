@@ -7,7 +7,7 @@ const sph_view = (function CreateSphView() {
   const ctx = canvas.getContext("2d");
   view_div.appendChild(canvas);
   view_div.appendChild(setting);
-  const w = 600;
+  const w = 1200;
   const h = 800;
 
   const init = () => {
@@ -21,7 +21,7 @@ const sph_view = (function CreateSphView() {
   // };
 
   const update = ()=>{
-    for (let index = 0; index < 8; index++) {
+    for (let index = 0; index < 6; index++) {
       Module._update();
     }
   }
@@ -39,7 +39,7 @@ const sph_view = (function CreateSphView() {
       const p = Module.HEAPF32[index + 4];
       const rho = Module.HEAPF32[index + 5];
       ctx.beginPath();
-      ctx.arc(x, 800 - y, 10, 0, 2 * Math.PI);
+      ctx.arc(x, h - y, 10, 0, 2 * Math.PI);
       ctx.closePath();
       ctx.fillStyle = `rgb(${p*100 -rho*100 + 100},${120 - rho*100},233)`; //"lightblue";
       ctx.fill();
