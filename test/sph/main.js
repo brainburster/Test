@@ -8,7 +8,7 @@ const sph_view = (function CreateSphView() {
   view_div.appendChild(canvas);
   view_div.appendChild(setting);
   const w = 600;
-  const h = 600;
+  const h = 800;
 
   const init = () => {
     canvas.width = w;
@@ -21,7 +21,7 @@ const sph_view = (function CreateSphView() {
   // };
 
   const update = ()=>{
-    for (let index = 0; index < 6; index++) {
+    for (let index = 0; index < 8; index++) {
       Module._update();
     }
   }
@@ -33,13 +33,15 @@ const sph_view = (function CreateSphView() {
     const p_size = Module._get_particle_size() >> 2;
     //渲染粒子
     for (let i = 0; i < len; i++) {
-      const index = ptr+i*p_size;
+      const index = ptr + i * p_size;
       const x = Module.HEAPF32[index];
       const y = Module.HEAPF32[index + 1];
+      const p = Module.HEAPF32[index + 4];
+      const rho = Module.HEAPF32[index + 5];
       ctx.beginPath();
-      ctx.arc(x, 600 - y, 10, 0, 2 * Math.PI);
+      ctx.arc(x, 800 - y, 10, 0, 2 * Math.PI);
       ctx.closePath();
-      ctx.fillStyle = "lightblue";
+      ctx.fillStyle = `rgb(${p*100 -rho*100 + 100},${120 - rho*100},233)`; //"lightblue";
       ctx.fill();
     }
   }

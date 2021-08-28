@@ -1051,7 +1051,7 @@ function updateGlobalBufferAndViews(buf) {
 
 var TOTAL_STACK = 5242880;
 
-var INITIAL_MEMORY = Module['INITIAL_MEMORY'] || 134217728;
+var INITIAL_MEMORY = Module['INITIAL_MEMORY'] || 67108864;
 
 // include: runtime_init_table.js
 // In regular non-RELOCATABLE mode the table is exported
