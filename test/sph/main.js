@@ -21,7 +21,7 @@ const sph_view = (function CreateSphView() {
   // };
 
   const update = ()=>{
-    for (let index = 0; index < 6; index++) {
+    for (let index = 0; index < 5; index++) {
       Module._update();
     }
   }
@@ -41,7 +41,7 @@ const sph_view = (function CreateSphView() {
       ctx.beginPath();
       ctx.arc(x, h - y, 10, 0, 2 * Math.PI);
       ctx.closePath();
-      ctx.fillStyle = `rgb(${p*100 -rho*100 + 100},${120 - rho*100},233)`; //"lightblue";
+      ctx.fillStyle = `rgb(120,120,233)`;
       ctx.fill();
     }
   }
