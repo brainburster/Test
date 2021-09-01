@@ -105,10 +105,6 @@ class SMSYS {
         this.render();
       } else {
         console.log("计算超时");
-        if (speed > 0.2) {
-          speed -= 0.1;
-          console.log("降低模拟速度");
-        }
         lag = 0;
       }
 

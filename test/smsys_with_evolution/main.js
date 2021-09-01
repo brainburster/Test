@@ -633,10 +633,6 @@ class GASMSYS {
         this.render();
       } else {
         console.log("计算超时");
-        if (setting.sim_speed > 0.2) {
-          setting.sim_speed -= 0.1;       
-          console.log("尝试降低模拟速度");
-        }
         lag = 0;
       }
 
