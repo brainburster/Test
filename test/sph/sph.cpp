@@ -154,12 +154,12 @@ struct Setting
     static constexpr float h_3 = h_2 * h;
     static constexpr float pi = M_PI;
     static constexpr float _2pi = pi * 2;
-    static constexpr float rho0 = 100.f;
+    static constexpr float rho0 = 10.f;
     static constexpr int gama = 8;
-    static constexpr float B = 0.01f;
+    static constexpr float B = 16.f;
     static constexpr float ki_vi = 1e8f; //kinematic viscosity
-    static constexpr Vec2 g = {0, -9.8f};
-    static constexpr float dt = 0.005f;
+    static constexpr Vec2 g = {0.f, -9.8f * 1e2f};
+    static constexpr float dt = 0.0003f;
 };
 
 //假设粒子质量始终为1, m=1
@@ -464,14 +464,14 @@ public:
     void init()
     {
         srand(time(0));
-        _particles.resize(100);
-        _neighborboods.resize(100);
-        for (int i = -5; i < 5; i++)
+        _particles.resize(256);
+        _neighborboods.resize(256);
+        for (int i = -8; i < 8; i++)
         {
-            for (int j = 0; j < 10; j++)
+            for (int j = 0; j < 16; j++)
             {
-                auto &p = _particles[i + 5 + j * 10];
-                p.x = {i * 30.f + width / 2, j * 30.f + height * 0.5f};
+                auto &p = _particles[i + 8 + j * 16];
+                p.x = {i * 29.9f + width / 2, j * 29.9f + height * 0.3f};
                 p.v = {rand() % 100 * 0.001f, rand() % 100 * 0.001f};
             }
         }
@@ -504,7 +504,7 @@ public:
         //更新网格
         update_grids();
         //更新粒子
-        //update_particles();
+        //update_particles_WCSPH();
         update_particles_PCISPH();
     }
 
@@ -525,7 +525,7 @@ private:
     }
 
     //WCSPH
-    void update_particles()
+    void update_particles_WCSPH()
     {
         using U = Utility;
         using S = Setting;
@@ -551,13 +551,13 @@ private:
                 if (&p1 == &p2 || r < 1e-8f)
                     return;
                 const Vec2 p2_p1 = p1.x - p2.x;
-                lapl_v += p2.v * U::Lapl_W_Visco(r) / (p2.rho * r);
+                lapl_v += U::Lapl_W_Visco(r) / p2.rho * (p1.v - p2.v);
                 f_s += p2_p1 * U::W_Poly6(r);
                 grad_p += U::Grad_W_Spiky(p2_p1) * (p1.p / (p1.rho * p1.rho) + p2.p / (p2.rho * p2.rho));
             });
             f_s *= -S::h_2;
             //剪切力和压力
-            const Vec2 f_v = -S::ki_vi * lapl_v * 2;
+            const Vec2 f_v = -S::ki_vi * lapl_v * 1e-6f;
             const Vec2 f_p = grad_p;
             //边界力
             Vec2 f_b = {};
@@ -565,25 +565,25 @@ private:
             {
                 const float r = fmax(p.x.x, 1e-2f);
                 constexpr Vec2 d = {-1, 0};
-                f_b += U::Grad_W_Spiky(r) / r * 1e6 * d;
+                f_b += U::Grad_W_Spiky(r) / r * 1e8 * d;
             }
             else if (p.x.x > width - S::h / 2)
             {
                 const float r = fmax(width - p.x.x, 1e-2f);
                 constexpr Vec2 d = {1, 0};
-                f_b += U::Grad_W_Spiky(r) / r * 1e6 * d;
+                f_b += U::Grad_W_Spiky(r) / r * 1e8 * d;
             }
             if (p.x.y < S::h / 2)
             {
                 const float r = fmax(p.x.y, 1e-2f);
                 constexpr Vec2 d = {0, -1};
-                f_b += U::Grad_W_Spiky(r) / r * 1e6 * d;
+                f_b += U::Grad_W_Spiky(r) / r * 1e8 * d;
             }
             else if (p.x.y > height - 1 - S::h / 2)
             {
                 const float r = fmax(height - p.x.y, 1e-2f);
                 constexpr Vec2 d = {0, 1};
-                f_b += U::Grad_W_Spiky(r) / r * 1e6 * d;
+                f_b += U::Grad_W_Spiky(r) / r * 1e8 * d;
             }
             const Vec2 a = f_v + f_b + f_p + f_s + S::g; //m=1
             p.x += p.v * S::dt + 0.5f * a * S::dt * S::dt;
@@ -633,39 +633,42 @@ private:
             Vec2 f_g = S::g; //重力
             for (Particle *q : neighbors.get_range())
             {
+                if (&p1 == q)
+                    continue;
                 const Particle &p2 = *q;
                 const Vec2 p2_p1 = p1.x - p2.x;
                 const float r = p2_p1.norm();
-                f_v += p2.v * U::Lapl_W_Visco(r) / S::rho0;
-                if (&p1 == q || r < 1e-8)
+                if (r < 1e-8)
                     continue;
+                f_v += U::Lapl_W_Visco(r) / S::rho0 * (p1.v - p2.v);
                 f_s += p2_p1 * U::W_Poly6(r) / r;
             }
             f_v *= -S::ki_vi * 2;
-            f_s *= -S::h_2 * 1e3f;
+            f_s *= -S::h_2 * 1e5f;
+            constexpr float k_b = 1e8f;
             if (p1.x.x < S::h / 2)
             {
                 const float r = fmax(p1.x.x, 1e-2f);
                 constexpr Vec2 d = {-1, 0};
-                f_b += U::Grad_W_Spiky(r) / r * 1e6 * d;
+                f_b += U::Grad_W_Spiky(r) / r * k_b * d;
             }
             else if (p1.x.x > width - S::h / 2)
             {
                 const float r = fmax(width - p1.x.x, 1e-2f);
                 constexpr Vec2 d = {1, 0};
-                f_b += U::Grad_W_Spiky(r) / r * 1e6 * d;
+                f_b += U::Grad_W_Spiky(r) / r * k_b * d;
             }
             if (p1.x.y < S::h / 2)
             {
                 const float r = fmax(p1.x.y, 1e-2f);
                 constexpr Vec2 d = {0, -1};
-                f_b += U::Grad_W_Spiky(r) / r * 1e6 * d;
+                f_b += U::Grad_W_Spiky(r) / r * k_b * d;
             }
             else if (p1.x.y > height - 1 - S::h / 2)
             {
                 const float r = fmax(height - p1.x.y, 1e-2f);
                 constexpr Vec2 d = {0, 1};
-                f_b += U::Grad_W_Spiky(r) / r * 1e6 * d;
+                f_b += U::Grad_W_Spiky(r) / r * k_b * d;
             }
             p1.f_v_g_ext = f_v + f_b + f_s + f_g;
 
@@ -725,7 +728,7 @@ private:
             Vec2 a = p.f_v_g_ext + p.f_p; //m = 1
             p.x = p.x + p.v * S::dt + 0.5f * S::dt * S::dt * a;
             p.v += a * S::dt;
-            p.v *= 1.f - fmin(powf(p.v.norm(), 2) * S::h * 1e-6f*S::dt + 1e-5f * S::dt, 0.8f); //阻尼
+            //p.v *= 1.f - fmin(powf(p.v.norm(), 2) * S::h * 1e-8f*S::dt + 1e-7f * S::dt, 0.8f); //阻尼
         }
     }
 

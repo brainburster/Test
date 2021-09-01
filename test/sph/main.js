@@ -21,7 +21,7 @@ const sph_view = (function CreateSphView() {
   // };
 
   const update = ()=>{
-    for (let index = 0; index < 5; index++) {
+    for (let index = 0; index < 2; index++) {
       Module._update();
     }
   }
