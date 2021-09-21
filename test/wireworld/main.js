@@ -99,7 +99,7 @@ function color_map(v){
     case 3:
       return "red";
   }
-  return "lightgray";
+  return "white";
 }
 
 class Test {
@@ -140,6 +140,7 @@ class Test {
     });
     this.ctx.fillStyle = "black";
     this.ctx.strokeStyle = "black";
+
   }
 
   handle_input() {
