@@ -4,7 +4,7 @@ Wnd::render_callback_t Wnd::onrender;
 Wnd::update_callback_t Wnd::onupdate;
 GLFWwindow* Wnd::window;
 
-void error_callback(int error, const char* description) 
+static void error_callback(int error, const char* description) 
 {
     std::cerr << "GLFW ERROR:" << error << "\ndescription:" << description;
 }
