@@ -9,9 +9,10 @@ const vertices = new Float32Array([
 ]);
 
 //默认顶点着色器
-const vs_default_str = glsl`
+const vs_default_str = glsl`#version 300 es
+#pragma vscode_glsllint_stage : vert
 precision mediump float;
-attribute vec2 position;
+in vec2 position;
 void main()
 {
     gl_Position = vec4(position, 0.0, 1.0);
@@ -19,62 +20,155 @@ void main()
 `;
 
 //用于显示的像素着色器
-const fs_display_str = glsl`
+const fs_display_str = glsl`#version 300 es
+#pragma vscode_glsllint_stage : frag
 precision mediump float;
 
 uniform sampler2D tex;
-
+out vec4 frag_color;
 void main()
 {
     vec2 uv = vec2(gl_FragCoord.x/800.0,gl_FragCoord.y/600.0);
-    gl_FragColor = texture2D(tex, uv);
+    frag_color = texture(tex, uv);
 }
 `;
 
 //用于计算光追的像素着色器
-//参考了:
-const fs_ray_tracing_str = glsl`
+//主要参考了: https://raytracing.github.io/books/RayTracingInOneWeekend.html
+//以及: https://raytracing.github.io/books/RayTracingTheNextWeek.html
+const fs_ray_tracing_str = glsl`#version 300 es
+#pragma vscode_glsllint_stage : frag
 precision mediump float;
 
 uniform sampler2D tex;
-
-struct ray
-{
-  vec3 orig;
-  vec3 dir;
-};
+out vec4 frag_color;
 
 vec3 lerp(vec3 a, vec3 b, float k)
 {
   return (1.0-k) * a + k* b;
 }
 
+//gpu随机数
+//参见: http://www.jcgt.org/published/0009/03/02/
+//以及: https://www.shadertoy.com/view/XlGcRh
+uvec3 pcg3d(uvec3 v) {
+  v = v * 1664525u + 1013904223u;
+
+  v.x += v.y*v.z;
+  v.y += v.z*v.x;
+  v.z += v.x*v.y;
+
+  v ^= v >> 16u;
+
+  v.x += v.y*v.z;
+  v.y += v.z*v.x;
+  v.z += v.x*v.y;
+
+  return v;
+}
+
+// Integer Hash - I
+// - Inigo Quilez, Integer Hash - I, 2017
+//   https://www.shadertoy.com/view/llGSzw
+uint iqint1(uint n)
+{
+    // integer hash copied from Hugo Elias
+	n = (n << 13U) ^ n;
+    n = n * (n * n * 15731U + 789221U) + 1376312589U;
+    return n;
+}
+
+vec3 rand(vec3 seed){
+  return vec3(pcg3d(uvec3(seed*100000.0)))*(1.0/float(0xffffffffu));
+}
+
+float rand(float seed){
+  return float(iqint1(uint(seed*100000.0)))*(1.0/float(0xffffffffu));
+}
+
+//下面的代码基本是从RayTracingInOneWeekend中的c++代码平移过来的
+struct ray
+{
+  vec3 orig;
+  vec3 dir;
+};
+
+struct hit_record
+{
+  vec3 p;
+  vec3 normal;
+  float t;
+  bool front_face;
+};
+
+struct sphere
+{
+  vec3 center;
+  float radius;
+};
+
 vec3 ray_at(ray r,float t)
 {
   return r.orig+r.dir*t;
 }
 
-float hit_sphere(in vec3 center,in float radius,inout ray r) {
-  vec3 oc = r.orig - center;
-  float a = dot(r.dir,r.dir);
-  float half_b = dot(oc, r.dir);
-  float c = dot(oc, oc) - radius*radius;
-  float discriminant = half_b*half_b - a*c;
-  if (discriminant < 0.0) {
-      return -1.0;
-  } else {
-      return (-half_b - sqrt(discriminant) ) / a;
-  }
+void hit_record_set_face_normal(inout hit_record hr,in ray r,in vec3 outward_normal)
+{
+  hr.front_face = dot(r.dir,outward_normal)<0.0;
+  hr.normal = hr.front_face ? outward_normal : - outward_normal;
 }
 
+bool hit(in sphere s, in ray r,in float t_min,in float t_max,inout hit_record rec)
+{
+  vec3 oc = r.orig - s.center;
+  float a = dot(r.dir,r.dir);
+  float half_b = dot(oc, r.dir);
+  float c = dot(oc, oc) - s.radius*s.radius;
+  float discriminant = half_b*half_b - a*c;
+
+  if (discriminant > 0.0) {
+        float root = sqrt(discriminant);
+        float temp = (-half_b - root)/a;
+        if (temp < t_max && temp > t_min) {
+            rec.t = temp;
+            rec.p = ray_at(r,rec.t);
+            vec3 outward_normal = (rec.p-s.center) /s.radius;
+            hit_record_set_face_normal(rec, r, outward_normal);
+            return true;
+        }
+        temp = (-half_b + root) / a;
+        if (temp < t_max && temp > t_min) {
+            rec.t = temp;
+            rec.p = ray_at(r,rec.t);
+            vec3 outward_normal = (rec.p-s.center) /s.radius;
+            hit_record_set_face_normal(rec, r, outward_normal);
+            return true;
+        }
+    }
+    return false;
+}
+
+sphere s = sphere(vec3(0.0,0.0,-1.0),0.5);
+sphere s1 = sphere(vec3(0.0,-100.5,-1.0),100.0);
+bool hit_scene(in ray r,inout hit_record hr){
+  if(hit(s,r,0.01,10.0,hr)){
+    return true;
+  }
+  if(hit(s1,r,0.01,10.0,hr)){
+    return true;
+  }
+  return false;
+}
+
+hit_record hr;
 vec3 ray_color(ray r) {
-  float t = hit_sphere(vec3(0.0,0.0,-1.0), 0.5, r);
-  if (t > 0.0) {
-      vec3 N = normalize(ray_at(r,t) - vec3(0.0,0.0,-1.0));
+  bool hit_anything = hit_scene(r, hr);
+  if (hit_anything) {
+      vec3 N = normalize(ray_at(r,hr.t) - vec3(0.0,0.0,-1.0));
       return 0.5*vec3(N.x+1.0, N.y+1.0, N.z+1.0);
   }
   vec3 dir = normalize(r.dir);
-  t = 0.5*(dir.y + 1.0);
+  float t = 0.5*(dir.y + 1.0);
   return lerp(vec3(1.0, 1.0, 1.0),vec3(0.5, 0.7, 1.0),t);
 }
 
@@ -87,7 +181,7 @@ void main()
     vec3 origin = vec3(0.0, 0.0, 0.0);
     ray r = ray(origin, lower_left_corner + uv.x*horizontal + uv.y*vertical);
     vec3 color = ray_color(r);
-    gl_FragColor = vec4(color,1.0);//vec4(gl_FragCoord.xy/600.0, 1.0, 1.0) + texture2D(tex,uv);
+    frag_color = vec4(color,1.0);//vec4(gl_FragCoord.xy/600.0, 1.0, 1.0) + texture2D(tex,uv);
 }
 `;
 
@@ -178,7 +272,7 @@ function main() {
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.useProgram(program_ray_tracing);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    //将tex1 copy 到 tex0
+    //将tex1 copy 到 tex0, 为了累积采样光线
     gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.useProgram(program_display);
