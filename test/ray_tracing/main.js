@@ -46,6 +46,7 @@ void main()
 {
     vec2 uv = vec2(gl_FragCoord.x/800.0,gl_FragCoord.y/600.0);
     vec4 color = texture(tex, uv);
+    color = pow(color,vec4(0.4545));
     frag_color = color;
 }
 `;
@@ -88,13 +89,14 @@ uvec3 pcg3d(uvec3 v) {
   return v;
 }
 
-vec3 rand(uvec3 seed){
-  return vec3(pcg3d(seed))*(1.0/float(0xffffffffu));
+vec3 rand(vec3 seed){
+  return vec3(pcg3d(uvec3((seed+vec3(1.0,1.0,1.0))*9999999.0)))*(1.0/float(0xffffffffu));
 }
 
 vec3 rand(uint seed){
   return vec3(pcg3d(uvec3(seed+1024u,seed+1025u,seed+1023u)))*(1.0/float(0xffffffffu));
 }
+
 //#endregion rand
 
 //下面的代码基本是从RayTracingInOneWeekend中的c++代码平移过来的
@@ -188,9 +190,9 @@ camera create_camera()
 {
   camera c = camera(
     ca*vec3(0.0, 0.0, 0.0),
-    ca*vec3(-1.5, -1.0, -1.0),
-    ca*vec3(3.0, 0.0, 0.0),
-    ca*vec3(0.0, 2.0, 0.0)
+    ca*vec3(-4.0/6.0, -0.5, -1.0),
+    ca*vec3(4.0/3.0, 0.0, 0.0),
+    ca*vec3(0.0, 1.0, 0.0)
   );
   return c;
 }
@@ -202,9 +204,10 @@ ray get_ray(camera c,float u,float v)
 //#endregion camera
 
 //todo: 使用uniform数组保存场景
-sphere s = sphere(vec3(0.0,0.0,-1.0),0.5);
-sphere s1 = sphere(vec3(0.0,-100.5,-1.0),100.0);
-bool map(in ray r,inout hit_record hr){
+sphere s = sphere(vec3(0.0,0.0,-1.0),0.3);
+sphere s1 = sphere(vec3(0.0,-100.3,-1.0),100.0);
+hit_record hr;
+bool map(in ray r){
   if(hit(s,r,0.01,10.0,hr)){
     return true;
   }
@@ -214,26 +217,95 @@ bool map(in ray r,inout hit_record hr){
   return false;
 }
 
-//todo: 消除所有的inout限定符修饰的hr参数,转而使用hr全局变量，不过我并不知道编译器会不会将其优化到local register中
-hit_record hr;
-vec3 ray_color(ray r) {
-  bool hit_anything = map(r, hr);
-  if (hit_anything) {
-      vec3 N = normalize(ray_at(r,hr.t) - vec3(0.0,0.0,-1.0));
-      return 0.5*vec3(N.x+1.0, N.y+1.0, N.z+1.0);
-  }
+vec3 random_unit_vector(vec3 p){
+  vec3 ran = rand(p+vec3(iFrame*20u));
+  float a = ran.x*2.0*3.14159;
+  float z = ran.y*2.0-1.0;
+  float r = sqrt(1.0 - z*z);
+  return vec3(r*cos(a), r*sin(a), z);
+}
+
+vec3 sky_color(ray r){
   vec3 dir = normalize(r.dir);
   float t = 0.5*(dir.y + 1.0);
   return lerp(vec3(1.0, 1.0, 1.0),vec3(0.5, 0.7, 1.0),t);
 }
 
+//todo: 消除所有的inout限定符修饰的hr参数,转而使用hr全局变量，不过我并不知道编译器会不会将其优化到local register中
+//手动递归
+vec3 ray_color_8(ray r) {
+  return vec3(0.0,0.0,0.0);
+}
+vec3 ray_color_7(ray r) {
+  if (map(r)) {
+      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
+      return 0.5*ray_color_8(ray(hr.p,target-hr.p));
+  }
+  return sky_color(r);
+}
+vec3 ray_color_6(ray r) {
+  if (map(r)) {
+      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
+      return 0.5*ray_color_7(ray(hr.p,target-hr.p));
+  }
+  return sky_color(r);
+}
+vec3 ray_color_5(ray r) {
+  if (map(r)) {
+      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
+      return 0.5*ray_color_6(ray(hr.p,target-hr.p));
+  }
+  return sky_color(r);
+}
+vec3 ray_color_4(ray r) {
+  if (map(r)) {
+      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
+      return 0.5*ray_color_5(ray(hr.p,target-hr.p));
+  }
+  return sky_color(r);
+}
+vec3 ray_color_3(ray r) {
+  if (map(r)) {
+      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
+      return 0.5*ray_color_4(ray(hr.p,target-hr.p));
+  }
+  return sky_color(r);
+}
+vec3 ray_color_2(ray r) {
+  if (map(r)) {
+      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
+      return 0.5*ray_color_3(ray(hr.p,target-hr.p));
+  }
+  return sky_color(r);
+}
+vec3 ray_color_1(ray r) {
+  if (map(r)) {
+      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
+      return 0.5*ray_color_2(ray(hr.p,target-hr.p));
+  }
+  return sky_color(r);
+}
+vec3 ray_color(ray r) {
+  if (map(r)) {
+      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
+      return 0.5*ray_color_1(ray(hr.p,target-hr.p));
+  }
+  return sky_color(r);
+}
+
+
 void main()
 {
     vec2 uv = (gl_FragCoord.xy+vec2(0.5,0.5))/vec2(800.0,600.0);
     camera c = create_camera();
-    vec3 ra = rand(iFrame)*0.002;
-    ray r = get_ray(c,uv.x+ra.x,uv.y+ra.y);
-    vec3 color = ray_color(r) / float(maxFrame);
+    vec3 color;
+    for (uint i = 0u; i < 32u; i++)
+    {
+      vec3 ra = rand(iFrame*23u+i*47u)*0.005;
+      ray r = get_ray(c,uv.x+ra.x,uv.y+ra.y);
+      color += ray_color(r) / 32.0; 
+    }
+    color /= float(maxFrame);
     color += texture(tex,uv).rgb;
     frag_color = vec4(color, 1.0);
 }
