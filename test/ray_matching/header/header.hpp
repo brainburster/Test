@@ -5,6 +5,7 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <functional>
+#include <math.h>
 
 struct Wnd
 {

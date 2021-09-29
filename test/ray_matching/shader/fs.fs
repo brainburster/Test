@@ -1,9 +1,10 @@
-R"(
+R"(#version 300 es
 //参考了(抄自): Inigo Quilez大佬的https://www.shadertoy.com/view/Xds3zN
 precision mediump float;
 
 uniform vec3 state;
 uniform int iframe;
+out vec4 frag_color;
 
 //几个简单的有向距离场函数
 float sdPlane(vec3 p){
@@ -144,6 +145,15 @@ float checkersGradBox( in vec2 p, in vec2 dpdx, in vec2 dpdy )
     return 0.5 - 0.5*i.x*i.y;                  
 }
 
+// iq大佬的噪声函数, 效率和质量都很高
+// https://www.shadertoy.com/view/4tXyWN
+float hash( uvec2 x )
+{
+    uvec2 q = 1103515245U * ( (x>>1U) ^ (x.yx   ) );
+    uint  n = 1103515245U * ( (q.x  ) ^ (q.y>>3U) );
+    return float(n) * (1.0/float(0xffffffffU));
+}
+
 //材质函数
 vec3 material(in float m)
 {
@@ -175,8 +185,8 @@ vec3 render(in vec3 ro, in vec3 rd, in vec3 rdx, in vec3 rdy)
             // project pixel footprint into the plane
             vec3 dpdx = ro.y*(rd/rd.y-rdx/rdx.y);
             vec3 dpdy = ro.y*(rd/rd.y-rdy/rdy.y);
-
-            float f = checkersGradBox( 3.0*pos.xz, 3.0*dpdx.xz, 3.0*dpdy.xz );
+            //float f = checkersGradBox( 3.0*pos.xz, 3.0*dpdx.xz, 3.0*dpdy.xz );
+            float f = hash(uvec2((pos.xz+vec2(100.0,100.0))*100.0));
             col = 0.15 + f*vec3(0.05);
             ks = 0.4;
         }
@@ -243,17 +253,28 @@ void main()
     front.x = -cos(yaw) * cos(pitch);
 	front.y = -sin(pitch);
 	front.z = -sin(yaw) * cos(pitch);
+    vec3 up = vec3(0.0,1.0,0.0);
+    vec3 right = normalize(cross(front,up));
+    up = cross(right,front);
     vec3 ro = ta-front*d;
-    mat3 view = setCamera(ro,ta, 0.0);
-    vec2 p = (gl_FragCoord.xy*2.0-vec2(800.0,600.0))/600.0;
-    const float fl = 2.5;
-    vec3 rd = view * normalize(vec3(p,fl) );
-    vec2 px = (2.0*(gl_FragCoord.xy+vec2(1.0,0.0))-vec2(800.0,600.0))/600.0;
-    vec2 py = (2.0*(gl_FragCoord.xy+vec2(0.0,1.0))-vec2(800.0,600.0))/600.0;
-    vec3 rdx = view * normalize( vec3(px,fl) );
-    vec3 rdy = view * normalize( vec3(py,fl) );
-    vec3 col = render( ro, rd, rdx, rdy );
-    col = pow( col, vec3(0.4545) );
-    gl_FragColor = vec4(col, 1.0);
+    mat3 ca = mat3(right,up,front); //setCamera(ro,ta, 0.0);
+    vec3 col = vec3(0.0,0.0,0.0);
+    for( int m=0; m<2; m++ )
+    {
+        for( int n=0; n<2; n++ )
+        {
+            vec2 o = vec2(float(m),float(n)) / 2.0 - 0.5;
+            vec2 p = ((gl_FragCoord.xy+o)*2.0-vec2(800.0,600.0))/600.0;
+            const float fl = 2.5;
+            vec3 rd = ca * normalize(vec3(p,fl) );
+            vec2 px = (2.0*(gl_FragCoord.xy+vec2(1.0,0.0))-vec2(800.0,600.0))/600.0;
+            vec2 py = (2.0*(gl_FragCoord.xy+vec2(0.0,1.0))-vec2(800.0,600.0))/600.0;
+            vec3 rdx = ca * normalize( vec3(px,fl) );
+            vec3 rdy = ca * normalize( vec3(py,fl) );
+            col += render( ro, rd, rdx, rdy );
+        }
+    }
+    col = pow( col*0.25, vec3(0.4545) );
+    frag_color = vec4(col, 1.0);
 }
 )"

@@ -1,5 +1,5 @@
-R"(
-attribute vec2 position;
+R"(#version 300 es
+in vec2 position;
 
 void main()
 {
