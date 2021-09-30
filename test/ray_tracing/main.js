@@ -2,7 +2,7 @@
 const glsl = (x) => x[0]
 const width = 800;
 const height = 600;
-const nsamples = 8;
+const nsamples = 16;
 const vertices = new Float32Array([
   -1.0, -1.0,
   1.0, -1.0,
@@ -97,6 +97,14 @@ vec3 rand(uint seed){
   return vec3(pcg3d(uvec3(seed+1024u,seed+1025u,seed+1023u)))*(1.0/float(0xffffffffu));
 }
 
+vec3 random_unit_vector(vec3 p){
+  vec3 ran = rand(p+vec3(iFrame*20u));
+  float a = ran.x*2.0*3.14159;
+  float z = ran.y*2.0-1.0;
+  float r = sqrt(1.0 - z*z);
+  return vec3(r*cos(a), r*sin(a), z);
+}
+
 //#endregion rand
 
 //下面的代码基本是从RayTracingInOneWeekend中的c++代码平移过来的
@@ -189,121 +197,123 @@ mat3 camera_mat( in vec3 ro, in vec3 ta, float cr )
 camera create_camera()
 {
   camera c = camera(
-    ca*vec3(0.0, 0.0, 0.0),
-    ca*vec3(-4.0/6.0, -0.5, -1.0),
-    ca*vec3(4.0/3.0, 0.0, 0.0),
-    ca*vec3(0.0, 1.0, 0.0)
+    vec3(0.0, 0.0, 0.0),
+    vec3(-4.0/6.0, -0.5, -1.0),
+    vec3(4.0/3.0, 0.0, 0.0),
+    vec3(0.0, 1.0, 0.0)
   );
   return c;
 }
 
 ray get_ray(camera c,float u,float v)
 {
-  return ray(c.orig,c.lower_left_corner+u*c.horizontal+v*c.vertical-c.orig);
+  vec3 ta = vec3(0.0, 0.0, 0.0);
+  return ray(c.orig,ca*(c.lower_left_corner+u*c.horizontal+v*c.vertical-c.orig));
 }
 //#endregion camera
 
-//todo: 使用uniform数组保存场景
-sphere s = sphere(vec3(0.0,0.0,-1.0),0.3);
-sphere s1 = sphere(vec3(0.0,-100.3,-1.0),100.0);
+//#region material
+
+struct material
+{
+  uint category;
+  vec3 albedo;
+};
+
+vec3 attenuation;
+ray scattered;
+material m;
 hit_record hr;
-bool map(in ray r){
-  if(hit(s,r,0.01,10.0,hr)){
+bool scatter(in ray r_in)
+{
+  if (0u==m.category) {
+    vec3 dir = hr.normal + random_unit_vector(hr.p);
+    scattered.orig = hr.p;
+    scattered.dir = dir;
+    attenuation = m.albedo;
+    return true;
+  } 
+  else if(1u==m.category){
+    vec3 reflected = reflect(normalize(r_in.dir), hr.normal);
+    scattered = ray(hr.p, reflected);
+    attenuation = m.albedo;
+    return (dot(scattered.dir, hr.normal) > 0.0);
+  }
+  return true;
+}
+
+//#endregion material
+
+//todo: 使用uniform数组保存场景
+const sphere s0 = sphere(vec3(0.0,0.0,-1.0),0.3);
+const sphere s1 = sphere(vec3(0.0,-100.35,-1.0),100.0);
+const sphere s2 = sphere(vec3(0.65,0.5,-1.0),0.3);
+const sphere s3 = sphere(vec3(-0.65,0.5,-1.0),0.3);
+const material m0 = material(0u,vec3(0.7, 0.3, 0.3));
+const material m1 = material(1u,vec3(0.85, 0.85, 0.85));
+const material m2 = material(0u,vec3(0.8, 0.8, 0.0));
+bool hit_world(in ray r){
+  if(hit(s0,r,0.01,10.0,hr)){
+    m = m0;
+    return true;
+  }
+  if(hit(s2,r,0.01,10.0,hr)){
+    m = m1;
+    return true;
+  }
+  if(hit(s3,r,0.01,10.0,hr)){
+    m = m1;
     return true;
   }
   if(hit(s1,r,0.01,10.0,hr)){
+    m = m2;
     return true;
   }
   return false;
 }
 
-vec3 random_unit_vector(vec3 p){
-  vec3 ran = rand(p+vec3(iFrame*20u));
-  float a = ran.x*2.0*3.14159;
-  float z = ran.y*2.0-1.0;
-  float r = sqrt(1.0 - z*z);
-  return vec3(r*cos(a), r*sin(a), z);
-}
-
+//天空颜色
+//todo: 使用天空盒
 vec3 sky_color(ray r){
   vec3 dir = normalize(r.dir);
   float t = 0.5*(dir.y + 1.0);
   return lerp(vec3(1.0, 1.0, 1.0),vec3(0.5, 0.7, 1.0),t);
 }
 
-//todo: 消除所有的inout限定符修饰的hr参数,转而使用hr全局变量，不过我并不知道编译器会不会将其优化到local register中
-//手动递归
-vec3 ray_color_8(ray r) {
-  return vec3(0.0,0.0,0.0);
-}
-vec3 ray_color_7(ray r) {
-  if (map(r)) {
-      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
-      return 0.5*ray_color_8(ray(hr.p,target-hr.p));
+vec3 ray_color(ray r)
+{
+  ray r_in = r;
+  int i=0;
+  vec3 color = vec3(0.0,0.0,0.0);
+  vec3 att[5];
+  while (i++<5) {
+    if (hit_world(r_in)) {
+      scatter(r_in);
+      r_in = scattered; //反射的光线
+      att[i] = attenuation; //吸收的比率
+    }else{
+      color = sky_color(r_in); //光源的颜色
+      break;
+    }
   }
-  return sky_color(r);
-}
-vec3 ray_color_6(ray r) {
-  if (map(r)) {
-      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
-      return 0.5*ray_color_7(ray(hr.p,target-hr.p));
+  
+  while(--i>0)
+  {
+    color = att[i]*color;
   }
-  return sky_color(r);
+  return color;
 }
-vec3 ray_color_5(ray r) {
-  if (map(r)) {
-      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
-      return 0.5*ray_color_6(ray(hr.p,target-hr.p));
-  }
-  return sky_color(r);
-}
-vec3 ray_color_4(ray r) {
-  if (map(r)) {
-      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
-      return 0.5*ray_color_5(ray(hr.p,target-hr.p));
-  }
-  return sky_color(r);
-}
-vec3 ray_color_3(ray r) {
-  if (map(r)) {
-      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
-      return 0.5*ray_color_4(ray(hr.p,target-hr.p));
-  }
-  return sky_color(r);
-}
-vec3 ray_color_2(ray r) {
-  if (map(r)) {
-      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
-      return 0.5*ray_color_3(ray(hr.p,target-hr.p));
-  }
-  return sky_color(r);
-}
-vec3 ray_color_1(ray r) {
-  if (map(r)) {
-      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
-      return 0.5*ray_color_2(ray(hr.p,target-hr.p));
-  }
-  return sky_color(r);
-}
-vec3 ray_color(ray r) {
-  if (map(r)) {
-      vec3 target = hr.p + hr.normal + random_unit_vector(hr.p);
-      return 0.5*ray_color_1(ray(hr.p,target-hr.p));
-  }
-  return sky_color(r);
-}
-
 
 void main()
 {
     vec2 uv = (gl_FragCoord.xy+vec2(0.5,0.5))/vec2(800.0,600.0);
     camera c = create_camera();
     vec3 color;
-    for (uint i = 0u; i < 32u; i++)
+    for (uint i = 0u; i < 8u; i++)
     {
       vec3 ra = rand(iFrame*23u+i*47u)*0.005;
       ray r = get_ray(c,uv.x+ra.x,uv.y+ra.y);
-      color += ray_color(r) / 32.0; 
+      color += ray_color(r) / 8.0; 
     }
     color /= float(maxFrame);
     color += texture(tex,uv).rgb;
@@ -359,7 +369,7 @@ function main() {
   canvas.width = width;
   canvas.height = height;
   gl.viewport(0, 0, width, height);
-  let yaw=0;
+  let yaw=-90;
   let pitch=0;
 
   //创建资源
@@ -450,10 +460,11 @@ function main() {
     if (e.buttons == 1) {
       //移动摄像机
       //...
-      yaw += e.movementX;
-      pitch += e.movementY;
+      yaw += e.movementX*0.1;
+      pitch += e.movementY*0.1;
       pitch = Math.max(Math.min(89, pitch), -89);
       update_camera();
     }
   }
+  update_camera();
 }
