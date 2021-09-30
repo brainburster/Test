@@ -53,13 +53,14 @@ void main()
 
 //用于计算光追的像素着色器
 //主要参考了: https://raytracing.github.io/books/RayTracingInOneWeekend.html
-//以及: https://raytracing.github.io/books/RayTracingTheNextWeek.html
+//以及(还没做): https://raytracing.github.io/books/RayTracingTheNextWeek.html
 const fs_ray_tracing_str = glsl`#version 300 es
 #pragma vscode_glsllint_stage : frag
 precision mediump float;
 
 uniform uint iFrame;
 uniform uint maxFrame;
+uniform float d;
 uniform sampler2D tex;
 uniform mat3 ca;
 out vec4 frag_color;
@@ -103,6 +104,14 @@ vec3 random_unit_vector(vec3 p){
   float z = ran.y*2.0-1.0;
   float r = sqrt(1.0 - z*z);
   return vec3(r*cos(a), r*sin(a), z);
+}
+
+vec3 random_in_unit_disk(vec3 p) {
+  while (true) {
+    vec3 ran = vec3(rand(p+vec3(iFrame*20u)).xy,0.0);
+      if (length(ran) >= 1.0) continue;
+      return ran;
+  }
 }
 
 //#endregion rand
@@ -194,21 +203,26 @@ mat3 camera_mat( in vec3 ro, in vec3 ta, float cr )
   return mat3( cu, cv, cw );
 }
 
-camera create_camera()
+camera create_camera(float vfov,float aspect)
 {
+  float theta = radians(vfov);
+  float half_height = tan(theta/2.0);
+  float half_width  = half_height*aspect;
+  vec3 orig =ca*vec3(0.,0.,d);
   camera c = camera(
-    vec3(0.0, 0.0, 0.0),
-    vec3(-4.0/6.0, -0.5, -1.0),
-    vec3(4.0/3.0, 0.0, 0.0),
-    vec3(0.0, 1.0, 0.0)
+    orig,
+    ca*vec3(-half_width, -half_height, -1.0),
+    ca*vec3(half_width*2., 0.0, 0.0),
+    ca*vec3(0.0, half_height*2., 0.0)
   );
   return c;
 }
 
 ray get_ray(camera c,float u,float v)
 {
-  vec3 ta = vec3(0.0, 0.0, 0.0);
-  return ray(c.orig,ca*(c.lower_left_corner+u*c.horizontal+v*c.vertical-c.orig));
+  vec3 off = 0.03*random_in_unit_disk(vec3(u,v,u*v));
+  off*=vec3(u,v,0.0);
+  return ray(c.orig+off,c.lower_left_corner+u*c.horizontal+v*c.vertical-off);
 }
 //#endregion camera
 
@@ -217,8 +231,15 @@ ray get_ray(camera c,float u,float v)
 struct material
 {
   uint category;
-  vec3 albedo;
+  vec4 data;
 };
+
+//菲涅尔项
+float schlick(float cosine, float ref_idx) {
+  float r0 = (1.0-ref_idx) / (1.0+ref_idx);
+  r0 = r0*r0;
+  return r0 + (1.0-r0)*pow((1.0 - cosine),5.0);
+}
 
 vec3 attenuation;
 ray scattered;
@@ -226,18 +247,40 @@ material m;
 hit_record hr;
 bool scatter(in ray r_in)
 {
-  if (0u==m.category) {
+  if (0u==m.category) { //lambert材质
     vec3 dir = hr.normal + random_unit_vector(hr.p);
     scattered.orig = hr.p;
     scattered.dir = dir;
-    attenuation = m.albedo;
+    attenuation = m.data.xyz;
     return true;
   } 
-  else if(1u==m.category){
+  else if(1u==m.category){ //metal
     vec3 reflected = reflect(normalize(r_in.dir), hr.normal);
-    scattered = ray(hr.p, reflected);
-    attenuation = m.albedo;
+    scattered = ray(hr.p, reflected+rand(hr.p).x*m.data.w);
+    attenuation = m.data.xyz;
     return (dot(scattered.dir, hr.normal) > 0.0);
+  }
+  else if(2u==m.category){ //dielectric
+    attenuation = m.data.xyz;
+    float etai_over_etat = (hr.front_face)?(1.0 / m.data.w):(m.data.w);
+    vec3 unit_direction = normalize(r_in.dir);
+    float cos_theta = min(dot(-unit_direction, hr.normal), 1.0);
+    float sin_theta = sqrt(1.0 - cos_theta*cos_theta);
+    if (etai_over_etat * sin_theta > 1.0 ) {
+      vec3 reflected = reflect(unit_direction, hr.normal);
+      scattered = ray(hr.p, reflected);
+      return true;
+    }
+    float reflect_prob = schlick(cos_theta, etai_over_etat);
+    if (rand(hr.p).x < reflect_prob)
+    {
+      vec3 reflected = reflect(unit_direction, hr.normal);
+      scattered = ray(hr.p, reflected);
+      return true;
+    }
+    vec3 refracted = refract(unit_direction, hr.normal, etai_over_etat);
+    scattered = ray(hr.p, refracted);
+    return true;
   }
   return true;
 }
@@ -245,38 +288,63 @@ bool scatter(in ray r_in)
 //#endregion material
 
 //todo: 使用uniform数组保存场景
-const sphere s0 = sphere(vec3(0.0,0.0,-1.0),0.3);
-const sphere s1 = sphere(vec3(0.0,-100.35,-1.0),100.0);
-const sphere s2 = sphere(vec3(0.65,0.5,-1.0),0.3);
-const sphere s3 = sphere(vec3(-0.65,0.5,-1.0),0.3);
-const material m0 = material(0u,vec3(0.7, 0.3, 0.3));
-const material m1 = material(1u,vec3(0.85, 0.85, 0.85));
-const material m2 = material(0u,vec3(0.8, 0.8, 0.0));
+const sphere s0 = sphere(vec3(0.0,0.0,0.0),0.3);
+const sphere s1 = sphere(vec3(0.0,-100.31,0.0),100.0);
+const sphere s2 = sphere(vec3(0.65,0.0,0.0),0.3);
+const sphere s3 = sphere(vec3(-0.65,0.0,0.0),0.3);
+const material m0 = material(0u,vec4(0.7, 0.3, 0.3,0.0));
+const material m1 = material(1u,vec4(0.85, 0.85, 0.85,0.08));
+const material m2 = material(0u,vec4(0.8, 0.8, 0.0,0.0));
+const material m3 = material(2u,vec4(0.95, 0.95, 0.95, 1.5));
+
 bool hit_world(in ray r){
-  if(hit(s0,r,0.01,10.0,hr)){
-    m = m0;
-    return true;
+  bool hit_anything = false;
+  hit_record old = hr;
+  old.t = 1e16;
+  if(hit(s0,r,0.01,100.0,hr)){
+    hit_anything = true;
+    if(hr.t<old.t){
+      m = m0;
+      old = hr;
+    }else{
+      hr = old;
+    }
   }
-  if(hit(s2,r,0.01,10.0,hr)){
-    m = m1;
-    return true;
+  if(hit(s3,r,0.01,100.0,hr)){
+    hit_anything = true;
+    if(hr.t<old.t){
+      m = m3;
+      old = hr;
+    }else{
+      hr = old;
+    }
   }
-  if(hit(s3,r,0.01,10.0,hr)){
-    m = m1;
-    return true;
+  if(hit(s2,r,0.01,100.0,hr)){
+    hit_anything = true;
+    if(hr.t<old.t){
+      m = m1;
+      old = hr;
+    }else{
+      hr = old;
+    }
   }
-  if(hit(s1,r,0.01,10.0,hr)){
-    m = m2;
-    return true;
+  if(hit(s1,r,0.01,100.0,hr)){
+    hit_anything = true;
+    if(hr.t<old.t){
+      m = m2;
+      old = hr;
+    }else{
+      hr = old;
+    }
   }
-  return false;
+  return hit_anything;
 }
 
 //天空颜色
 //todo: 使用天空盒
 vec3 sky_color(ray r){
   vec3 dir = normalize(r.dir);
-  float t = 0.5*(dir.y + 1.0);
+  float t = 0.5*(dot(dir,vec3(0.,1.,0.0)) + 1.0);
   return lerp(vec3(1.0, 1.0, 1.0),vec3(0.5, 0.7, 1.0),t);
 }
 
@@ -284,9 +352,9 @@ vec3 ray_color(ray r)
 {
   ray r_in = r;
   int i=0;
-  vec3 color = vec3(0.0,0.0,0.0);
-  vec3 att[5];
-  while (i++<5) {
+  vec3 color = vec3(1.0,0.0,0.0);
+  vec3 att[8];
+  while (i++<8) {
     if (hit_world(r_in)) {
       scatter(r_in);
       r_in = scattered; //反射的光线
@@ -307,7 +375,7 @@ vec3 ray_color(ray r)
 void main()
 {
     vec2 uv = (gl_FragCoord.xy+vec2(0.5,0.5))/vec2(800.0,600.0);
-    camera c = create_camera();
+    camera c = create_camera(70.,4./3.);
     vec3 color;
     for (uint i = 0u; i < 8u; i++)
     {
@@ -370,7 +438,8 @@ function main() {
   canvas.height = height;
   gl.viewport(0, 0, width, height);
   let yaw=-90;
-  let pitch=0;
+  let pitch=30;
+  let d=3;
 
   //创建资源
   const program_ray_tracing = create_program(gl, vs_default_str, fs_ray_tracing_str);
@@ -382,6 +451,8 @@ function main() {
   const loc_iFrame = gl.getUniformLocation(program_ray_tracing, "iFrame");
   const loc_maxFrame = gl.getUniformLocation(program_ray_tracing, "maxFrame");
   const loc_ca = gl.getUniformLocation(program_ray_tracing, "ca");
+  const loc_d = gl.getUniformLocation(program_ray_tracing, "d");
+
 
 
   //...
@@ -408,10 +479,12 @@ function main() {
   gl.useProgram(program_ray_tracing);
   gl.uniform1i(loc_tex_rt,0);
   gl.uniform1ui(loc_iFrame,0);
+  gl.uniform1ui(loc_d, d);
   gl.uniform1ui(loc_maxFrame,nsamples);
   gl.uniformMatrix3fv(loc_ca, false, [1, 0, 0, 0, 1, 0, 0, 0, 1]);
   gl.useProgram(program_display);
   gl.uniform1i(loc_tex_display,0);
+
   //
   document.body.appendChild(canvas);
   let i = 0;
@@ -434,8 +507,8 @@ function main() {
   
   const update_camera = ()=>{
       //更新相机矩阵
-      const y = (yaw / 180.0) * 3.14159265;
-      const p = (pitch / 180.0) * 3.14159265;
+      const y = (-yaw / 180.0) * 3.14159265;
+      const p = (-pitch / 180.0) * 3.14159265;
       const front = [
         -Math.cos(y) * Math.cos(p),
         -Math.sin(p),
@@ -447,6 +520,7 @@ function main() {
       const ca = [...right, ...up, ...front];
       gl.useProgram(program_ray_tracing);
       gl.uniformMatrix3fv(loc_ca, false, ca);
+      gl.uniform1f(loc_d, d);
       //重新开始渲染
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
       gl.clearColor(0, 0, 0, 1);
@@ -465,6 +539,10 @@ function main() {
       pitch = Math.max(Math.min(89, pitch), -89);
       update_camera();
     }
+  }
+  canvas.onwheel = e=>{
+    d += e.deltaY * -0.001;
+    update_camera();
   }
   update_camera();
 }
