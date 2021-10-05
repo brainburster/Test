@@ -282,10 +282,64 @@ bool scatter(in ray r_in)
     scattered = ray(hr.p, refracted);
     return true;
   }
+  else if(3u==m.category){//棋盘格
+    vec3 dir = hr.normal + random_unit_vector(hr.p);
+    scattered.orig = hr.p;
+    scattered.dir = dir;
+    vec3 sines = sin(10.0*hr.p);
+    float v = sines.x*sines.z;
+    if(v<0.0){
+      attenuation = vec3(1.0);
+    }else{
+      attenuation = m.data.xyz;
+    }
+    return true;
+  }
   return true;
 }
 
 //#endregion material
+
+//
+struct aabb
+{
+    vec3 min;
+    vec3 max;
+};
+
+bool aabb_hit(aabb box, ray r, float tmin,float tmax)
+{
+    for(int a = 0;a<3;a++){
+        float invD = 1.0f / r.dir[a];
+        float t0 = (box.min[a]-r.orig[a])*invD;
+        float t1 = (box.max[a]-r.orig[a])*invD;
+        if(invD<0.0f)
+        {
+            float t2 = t0;
+            t0 = t1;
+            t1 = t2;
+        }
+        tmin = t0>tmin ? t0:tmin; 
+        tmax = t1<tmax ? t1:tmax; 
+        if(tmax<tmin)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+aabb surrounding_box(aabb box0,aabb box1)
+{
+    vec3 small = min(box0.min,box1.min);
+    vec3 big = max(box0.max,box1.max);
+    return aabb(small,big);
+}
+
+aabb sphere_aabb(in sphere s)
+{
+    return aabb(s.center - vec3(s.radius),s.center + vec3(s.radius));
+}
 
 //todo: 使用uniform数组保存场景
 const sphere s0 = sphere(vec3(0.0,0.0,0.0),0.3);
@@ -294,47 +348,50 @@ const sphere s2 = sphere(vec3(0.65,0.0,0.0),0.3);
 const sphere s3 = sphere(vec3(-0.65,0.0,0.0),0.3);
 const material m0 = material(0u,vec4(0.7, 0.3, 0.3,0.0));
 const material m1 = material(1u,vec4(0.85, 0.85, 0.85,0.08));
-const material m2 = material(0u,vec4(0.8, 0.8, 0.0,0.0));
+const material m2 = material(3u,vec4(0.8, 0.8, 0.0,0.0));
 const material m3 = material(2u,vec4(0.95, 0.95, 0.95, 1.5));
 
-bool hit_world(in ray r){
+
+bool hit_world(in ray r)
+{
   bool hit_anything = false;
-  hit_record old = hr;
-  old.t = 1e16;
-  if(hit(s0,r,0.01,100.0,hr)){
+  hit_record hr_old = hr;
+  hr_old.t = 1e16;
+
+  if(aabb_hit(sphere_aabb(s0),r,0.01,100.0)&&hit(s0,r,0.01,100.0,hr)){
     hit_anything = true;
-    if(hr.t<old.t){
+    if(hr.t<hr_old.t){
       m = m0;
-      old = hr;
+      hr_old = hr;
     }else{
-      hr = old;
+      hr = hr_old;
     }
   }
-  if(hit(s3,r,0.01,100.0,hr)){
+  if(aabb_hit(sphere_aabb(s1),r,0.01,100.0)&&hit(s1,r,0.01,100.0,hr)){
     hit_anything = true;
-    if(hr.t<old.t){
-      m = m3;
-      old = hr;
-    }else{
-      hr = old;
-    }
-  }
-  if(hit(s2,r,0.01,100.0,hr)){
-    hit_anything = true;
-    if(hr.t<old.t){
-      m = m1;
-      old = hr;
-    }else{
-      hr = old;
-    }
-  }
-  if(hit(s1,r,0.01,100.0,hr)){
-    hit_anything = true;
-    if(hr.t<old.t){
+    if(hr.t<hr_old.t){
       m = m2;
-      old = hr;
+      hr_old = hr;
     }else{
-      hr = old;
+      hr = hr_old;
+    }
+  }
+  if(aabb_hit(sphere_aabb(s2),r,0.01,100.0)&&hit(s2,r,0.01,100.0,hr)){
+    hit_anything = true;
+    if(hr.t<hr_old.t){
+      m = m1;
+      hr_old = hr;
+    }else{
+      hr = hr_old;
+    }
+  }
+  if(aabb_hit(sphere_aabb(s3),r,0.01,100.0)&&hit(s3,r,0.01,100.0,hr)){
+    hit_anything = true;
+    if(hr.t<hr_old.t){
+      m = m3;
+      hr_old = hr;
+    }else{
+      hr = hr_old;
     }
   }
   return hit_anything;
