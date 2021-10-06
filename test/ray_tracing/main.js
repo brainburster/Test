@@ -140,7 +140,7 @@ struct hit_record
   bool front_face;
 };
 
-void hit_record_set_face_normal(inout hit_record hr,in ray r,in vec3 outward_normal)
+void set_face_normal(inout hit_record hr,in ray r,in vec3 outward_normal)
 {
   hr.front_face = dot(r.dir,outward_normal)<0.0;
   hr.normal = hr.front_face ? outward_normal : - outward_normal;
@@ -169,7 +169,7 @@ bool hit(in sphere s, in ray r,in float t_min,in float t_max,inout hit_record re
             rec.t = temp;
             rec.p = ray_at(r,rec.t);
             vec3 outward_normal = (rec.p-s.center) /s.radius;
-            hit_record_set_face_normal(rec, r, outward_normal);
+            set_face_normal(rec, r, outward_normal);
             return true;
         }
         temp = (-half_b + root) / a;
@@ -177,7 +177,7 @@ bool hit(in sphere s, in ray r,in float t_min,in float t_max,inout hit_record re
             rec.t = temp;
             rec.p = ray_at(r,rec.t);
             vec3 outward_normal = (rec.p-s.center) /s.radius;
-            hit_record_set_face_normal(rec, r, outward_normal);
+            set_face_normal(rec, r, outward_normal);
             return true;
         }
     }
@@ -281,8 +281,7 @@ bool scatter(in ray r_in)
     vec3 refracted = refract(unit_direction, hr.normal, etai_over_etat);
     scattered = ray(hr.p, refracted);
     return true;
-  }
-  else if(3u==m.category){//棋盘格
+  } else if(3u==m.category){//棋盘格
     vec3 dir = hr.normal + random_unit_vector(hr.p);
     scattered.orig = hr.p;
     scattered.dir = dir;
@@ -294,13 +293,40 @@ bool scatter(in ray r_in)
       attenuation = m.data.xyz;
     }
     return true;
+  } else if(4u==m.category){
+    attenuation = m.data.xyz;
+    return false;
   }
   return true;
 }
 
 //#endregion material
 
-//
+//#region xy_rect
+struct xy_rect
+{
+  float x0, x1, y0, y1, k;
+};
+
+bool hit(xy_rect rect, ray r,float t0,float t1,inout hit_record hr)
+{
+  float t = (rect.k-r.orig.z) / r.dir.z;
+  if (t < t0 || t > t1)
+      return false;
+  float x = r.orig.x + t*r.dir.x;
+  float y = r.orig.y + t*r.dir.y;
+  if (x < rect.x0 || x > rect.x1 || y < rect.y0 || y > rect.y1)
+      return false;
+  hr.t = t;
+  vec3 outward_normal = vec3(0, 0, 1);
+  set_face_normal(hr,r, outward_normal);
+  hr.p = ray_at(r,t);
+  return true;
+}
+
+//#endregion xy_rect
+
+//#region aabb
 struct aabb
 {
     vec3 min;
@@ -336,21 +362,32 @@ aabb surrounding_box(aabb box0,aabb box1)
     return aabb(small,big);
 }
 
-aabb sphere_aabb(in sphere s)
+aabb get_aabb(in sphere s)
 {
     return aabb(s.center - vec3(s.radius),s.center + vec3(s.radius));
 }
+
+aabb get_aabb(in xy_rect rect)
+{
+    return aabb(vec3(rect.x0,rect.y0,rect.k-0.0001),vec3(rect.x1,rect.y1,rect.k+0.0001));
+}
+//#endregion aabb
 
 //todo: 使用uniform数组保存场景
 const sphere s0 = sphere(vec3(0.0,0.0,0.0),0.3);
 const sphere s1 = sphere(vec3(0.0,-100.31,0.0),100.0);
 const sphere s2 = sphere(vec3(0.65,0.0,0.0),0.3);
 const sphere s3 = sphere(vec3(-0.65,0.0,0.0),0.3);
-const material m0 = material(0u,vec4(0.7, 0.3, 0.3,0.0));
-const material m1 = material(1u,vec4(0.85, 0.85, 0.85,0.08));
-const material m2 = material(3u,vec4(0.8, 0.8, 0.0,0.0));
-const material m3 = material(2u,vec4(0.95, 0.95, 0.95, 1.5));
+const sphere s4 = sphere(vec3(0.0,2.0,0.0),1.0);
+const xy_rect mirror = xy_rect(-1.6,1.6,-0.30,1.0,-0.7);
+const xy_rect mirror2 = xy_rect(-1.6,1.6,-0.30,1.0,3.0);
 
+const material m0 = material(0u,vec4(0.7, 0.3, 0.3,0.0));
+const material m1 = material(1u,vec4(0.85, 0.85, 0.85,0.1));
+const material m2 = material(3u,vec4(0.8, 0.8, 0.0,0.0));
+const material m3 = material(2u,vec4(0.99, 0.99, 0.99, 1.52));
+const material m4 = material(4u,vec4(0.8, 0.8, 0.8, 0.0));
+const material m5 = material(1u,vec4(0.95, 0.95, 0.95,0.0));
 
 bool hit_world(in ray r)
 {
@@ -358,7 +395,7 @@ bool hit_world(in ray r)
   hit_record hr_old = hr;
   hr_old.t = 1e16;
 
-  if(aabb_hit(sphere_aabb(s0),r,0.01,100.0)&&hit(s0,r,0.01,100.0,hr)){
+  if(aabb_hit(get_aabb(s0),r,0.01,100.0)&&hit(s0,r,0.01,100.0,hr)){
     hit_anything = true;
     if(hr.t<hr_old.t){
       m = m0;
@@ -367,7 +404,7 @@ bool hit_world(in ray r)
       hr = hr_old;
     }
   }
-  if(aabb_hit(sphere_aabb(s1),r,0.01,100.0)&&hit(s1,r,0.01,100.0,hr)){
+  if(aabb_hit(get_aabb(s1),r,0.01,100.0)&&hit(s1,r,0.01,100.0,hr)){
     hit_anything = true;
     if(hr.t<hr_old.t){
       m = m2;
@@ -376,7 +413,7 @@ bool hit_world(in ray r)
       hr = hr_old;
     }
   }
-  if(aabb_hit(sphere_aabb(s2),r,0.01,100.0)&&hit(s2,r,0.01,100.0,hr)){
+  if(aabb_hit(get_aabb(s2),r,0.01,100.0)&&hit(s2,r,0.01,100.0,hr)){
     hit_anything = true;
     if(hr.t<hr_old.t){
       m = m1;
@@ -385,10 +422,37 @@ bool hit_world(in ray r)
       hr = hr_old;
     }
   }
-  if(aabb_hit(sphere_aabb(s3),r,0.01,100.0)&&hit(s3,r,0.01,100.0,hr)){
+  if(aabb_hit(get_aabb(s3),r,0.01,100.0)&&hit(s3,r,0.01,100.0,hr)){
     hit_anything = true;
     if(hr.t<hr_old.t){
       m = m3;
+      hr_old = hr;
+    }else{
+      hr = hr_old;
+    }
+  }
+  if(aabb_hit(get_aabb(s4),r,0.01,100.0)&&hit(s4,r,0.01,100.0,hr)){
+    hit_anything = true;
+    if(hr.t<hr_old.t){
+      m = m4;
+      hr_old = hr;
+    }else{
+      hr = hr_old;
+    }
+  }
+  if(aabb_hit(get_aabb(mirror),r,0.01,100.0)&&hit(mirror,r,0.01,100.0,hr)){
+    hit_anything = true;
+    if(hr.t<hr_old.t){
+      m = m5;
+      hr_old = hr;
+    }else{
+      hr = hr_old;
+    }
+  }
+  if(aabb_hit(get_aabb(mirror2),r,0.01,100.0)&&hit(mirror2,r,0.01,100.0,hr)){
+    hit_anything = true;
+    if(hr.t<hr_old.t){
+      m = m5;
       hr_old = hr;
     }else{
       hr = hr_old;
@@ -409,15 +473,20 @@ vec3 ray_color(ray r)
 {
   ray r_in = r;
   int i=0;
-  vec3 color = vec3(1.0,0.0,0.0);
-  vec3 att[8];
-  while (i++<8) {
+  vec3 color = vec3(0.0,0.0,0.0);
+  vec3 att[32];
+  while (i++<32) {
     if (hit_world(r_in)) {
-      scatter(r_in);
-      r_in = scattered; //反射的光线
-      att[i] = attenuation; //吸收的比率
+      if(scatter(r_in)){
+        r_in = scattered; //反射的光线
+        att[i] = attenuation;
+      }else{
+        color = attenuation;
+        break;
+      }
     }else{
-      color = sky_color(r_in); //光源的颜色
+      //color = sky_color(r_in)*0.3;
+      color = vec3(0.0);
       break;
     }
   }
@@ -434,11 +503,11 @@ void main()
     vec2 uv = (gl_FragCoord.xy+vec2(0.5,0.5))/vec2(800.0,600.0);
     camera c = create_camera(70.,4./3.);
     vec3 color;
-    for (uint i = 0u; i < 8u; i++)
+    for (uint i = 0u; i < 4u; i++)
     {
-      vec3 ra = rand(iFrame*23u+i*47u)*0.005;
+      vec3 ra = rand(iFrame*23u+i*47u)*0.001;
       ray r = get_ray(c,uv.x+ra.x,uv.y+ra.y);
-      color += ray_color(r) / 8.0; 
+      color += ray_color(r) / 4.0; 
     }
     color /= float(maxFrame);
     color += texture(tex,uv).rgb;
@@ -494,7 +563,7 @@ function main() {
   canvas.width = width;
   canvas.height = height;
   gl.viewport(0, 0, width, height);
-  let yaw=-90;
+  let yaw=90;
   let pitch=30;
   let d=3;
 
