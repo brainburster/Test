@@ -2,7 +2,7 @@
 const glsl = (x) => x[0]
 const width = 800;
 const height = 600;
-const nsamples = 16;
+var nsamples = 32;
 const vertices = new Float32Array([
   -1.0, -1.0,
   1.0, -1.0,
@@ -44,9 +44,23 @@ uniform sampler2D tex;
 out vec4 frag_color;
 void main()
 {
-    vec2 uv = vec2(gl_FragCoord.x/800.0,gl_FragCoord.y/600.0);
-    vec4 color = texture(tex, uv);
-    color = pow(color,vec4(0.4545));
+    vec2 uv = vec2(gl_FragCoord.x/800.0, gl_FragCoord.y/600.0);
+    //滤波
+    vec4 color = texelFetch(tex, ivec2(gl_FragCoord),0)*16.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(0,1),0) *4.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(0,-1),0) *4.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(1,0),0) *4.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(-1,0),0) *4.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(2,0),0) *2.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(-2,0),0) *2.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(0,-2),0) *2.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(0,2),0) *2.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(4,4),0) *1.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(-4,-4),0) *1.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(4,-4),0) *1.;
+    color += texelFetch(tex, ivec2(gl_FragCoord)+ivec2(-4,4),0) *1.;
+    color = pow(color/44.,vec4(1./2.2));
+
     frag_color = color;
 }
 `;
@@ -91,11 +105,11 @@ uvec3 pcg3d(uvec3 v) {
 }
 
 vec3 rand(vec3 seed){
-  return vec3(pcg3d(uvec3((seed+vec3(1.0,1.0,1.0))*9999999.0)))*(1.0/float(0xffffffffu));
+  return vec3(pcg3d(uvec3(floatBitsToUint(seed.x),floatBitsToUint(seed.y),floatBitsToUint(seed.z))))*(1.0/float(0xffffffffu));
 }
 
 vec3 rand(uint seed){
-  return vec3(pcg3d(uvec3(seed+1024u,seed+1025u,seed+1023u)))*(1.0/float(0xffffffffu));
+  return vec3(pcg3d(uvec3(seed+1024u+iFrame*3u%100u,seed+1025u+iFrame*7u%100u,seed+1023u+iFrame*13u%100u)))*(1.0/float(0xffffffffu));
 }
 
 vec3 random_unit_vector(vec3 p){
@@ -474,12 +488,14 @@ vec3 ray_color(ray r)
   ray r_in = r;
   int i=0;
   vec3 color = vec3(0.0,0.0,0.0);
-  vec3 att[32];
+  //vec3 att[32]; 
+  vec3 att = vec3(1.);
   while (i++<32) {
     if (hit_world(r_in)) {
       if(scatter(r_in)){
         r_in = scattered; //反射的光线
-        att[i] = attenuation;
+        //att[i] = attenuation;
+        att *= attenuation;
       }else{
         color = attenuation;
         break;
@@ -491,11 +507,11 @@ vec3 ray_color(ray r)
     }
   }
   
-  while(--i>0)
-  {
-    color = att[i]*color;
-  }
-  return color;
+  // while(--i>0)
+  // {
+  //   color = att[i]*color;
+  // }
+  return color*att;
 }
 
 void main()
@@ -510,7 +526,7 @@ void main()
       color += ray_color(r) / 4.0; 
     }
     color /= float(maxFrame);
-    color += texture(tex,uv).rgb;
+    color += texelFetch(tex, ivec2(gl_FragCoord),0).xyz;//texture(tex,uv).rgb;
     frag_color = vec4(color, 1.0);
 }
 `;
@@ -538,6 +554,17 @@ function create_texture(gl){
   //参见:https://www.khronos.org/registry/OpenGL/specs/es/3.0/es_spec_3.0.pdf#page=143&zoom=100,168,666
   //opengl中GL_RGB16F是color_renderable的，然而在opengl es(包括webgl)中不是
   //参见:https://stackoverflow.com/questions/69016956/webgl2-incomplete-framebuffer
+  // gl.texImage2D(
+  //   gl.TEXTURE_2D,
+  //   0,
+  //   gl.RGB10_A2,
+  //   width,
+  //   height,
+  //   0,
+  //   gl.RGBA,
+  //   gl.UNSIGNED_INT_2_10_10_10_REV,
+  //   null
+  // );
   gl.texImage2D(
     gl.TEXTURE_2D,
     0,
@@ -613,9 +640,20 @@ function main() {
 
   //
   document.body.appendChild(canvas);
+  //
+  const range = document.createElement("input");
+  range.type = "range";
+  range.min=1;
+  range.max=128;
+  range.value=nsamples;
+  range.step=1;
+  document.body.appendChild(document.createElement("br"));
+  document.body.appendChild(range);
+
   let i = 0;
   const update = () => {
     if (i >= nsamples) return;
+    gl.uniform1ui(loc_maxFrame,nsamples);
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.useProgram(program_ray_tracing);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -655,6 +693,11 @@ function main() {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       i = 0;
   }
+
+  range.onchange = ()=>{
+    nsamples = range.valueAsNumber;
+    update_camera();
+  };
 
   canvas.onmousemove = e=>{
     if (e.buttons == 1) {
