@@ -53,7 +53,7 @@
         }
 
         function combination(n, k) {
-            if(n<k){return 0;}
+            if(n<k||n<0||k<0){return 0;}
             return factorial(n) / (factorial(k) * factorial(n - k));
         }
 
@@ -95,9 +95,7 @@
             for (let desiredCount1 = desiredCountMin1; desiredCount1 <= desiredCountMax1; desiredCount1++) {
                 for (let desiredCount2 = desiredCountMin2; desiredCount2 <= desiredCountMax2; desiredCount2++) {
                     for (let desiredCount3 = desiredCountMin3; desiredCount3 <= desiredCountMax3; desiredCount3++) {
-                        if(desiredCount1+desiredCount2+desiredCount3<=initialHandSize){
                             probability += (combination(componentCount1, desiredCount1)*combination(componentCount2, desiredCount2)*combination(componentCount3, desiredCount3) * combination(deckSize - componentCount1 - componentCount2-componentCount3,initialHandSize - desiredCount1-desiredCount2-desiredCount3)) / combination(deckSize,initialHandSize);
-                        }
                     }
                 }
             }
