@@ -68,7 +68,7 @@ const rule = (()=>{
   const w = 0.25;
   const cs = 1 / Math.SQRT2;
   const cs_2 = cs * cs;
-  const k = 0.25;
+  const k = .25;//0.25;
   return (n)=>{
     if (n[0] < 0 || n[3] < 0 || n[2] < 0 || n[1] < 0) {
       if((n[0]<0&&n[3]<0)||(n[1]<0&&n[2]<0)){return n;} //对角线上有方块直接返回

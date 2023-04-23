@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卡牌游戏上手率计算器</title>
+    <style>
+        input[type="number"] {
+            width: 30px;
+        }
+    </style>
+</head>
+<body>
+    <h1>卡牌游戏上手率计算器</h1>
+
+    <form id="card-calculator">
+        <label for="component-count1">卡组投入特定组件1数量:</label>
+        <input type="number" id="component-count1" min="0" value="3" required><br>
+        <label for="desired-count-min1">组件1期望上手数量下限:</label>
+        <input type="number" id="desired-count-min1" min="0" value="1" required><br>
+        <label for="desired-count-max1">组件1期望上手数量上限:</label>
+        <input type="number" id="desired-count-max1" min="0" value="1" required><br>------------<br>
+        <label for="component-count2">卡组投入特定组件2数量:</label>
+        <input type="number" id="component-count2" min="0" value="0" required><br>
+        <label for="desired-count-min2">组件2期望上手数量下限:</label>
+        <input type="number" id="desired-count-min2" min="0" value="0" required><br>
+        <label for="desired-count-max2">组件2期望上手数量上限:</label>
+        <input type="number" id="desired-count-max2" min="0" value="0" required><br>-------------<br>
+        <label for="component-count3">卡组投入特定组件3数量:</label>
+        <input type="number" id="component-count3" min="0" value="0" required><br>
+        <label for="desired-count-min3">组件2期望上手数量下限:</label>
+        <input type="number" id="desired-count-min3" min="0" value="0" required><br>
+        <label for="desired-count-max3">组件2期望上手数量上限:</label>
+        <input type="number" id="desired-count-max3" min="0" value="0" required><br>-------------<br>
+        <label for="initial-hand-size">初始手牌数量:</label>
+        <input type="number" id="initial-hand-size" min="0" value="5" required><br>
+        <label for="deck-size">卡组总数:</label>
+        <input type="number" id="deck-size" min="0" value="40" required><br><br>
+        <button type="submit">计算上手率</button>
+    </form>
+    <h3>注：如果某组件投入大于0，但期望数量为0，表示废件。如果某组件投入为0,则表示不考虑这个组件 </h3>
+    <h2 id="result"></h2>
+    <script>
+        function factorial(n) {
+            if (n === 0 || n === 1) {
+                return 1;
+            }
+            let result = 1;
+            for (let i = 2; i <= n; i++) {
+                result *= i;
+            }
+            return result;
+        }
+
+        function combination(n, k) {
+            if(n<k){return 0;}
+            return factorial(n) / (factorial(k) * factorial(n - k));
+        }
+
+        document.getElementById('card-calculator').addEventListener('submit', (event) => {
+            event.preventDefault();
+
+            const componentCount1 = parseInt(document.getElementById('component-count1').value);
+            let desiredCountMin1 = parseInt(document.getElementById('desired-count-min1').value);
+            let desiredCountMax1 = parseInt(document.getElementById('desired-count-max1').value);
+            desiredCountMax1 = Math.min(desiredCountMax1,componentCount1);
+            desiredCountMin1 = Math.min(desiredCountMin1,desiredCountMax1);
+            document.getElementById('desired-count-max1').value = desiredCountMax1
+            document.getElementById('desired-count-min1').value = desiredCountMin1
+
+            const componentCount2 = parseInt(document.getElementById('component-count2').value);
+            let desiredCountMin2 = parseInt(document.getElementById('desired-count-min2').value);
+            let desiredCountMax2 = parseInt(document.getElementById('desired-count-max2').value);
+            desiredCountMax2 = Math.min(desiredCountMax2,componentCount2);
+            desiredCountMin2 = Math.min(desiredCountMin2,desiredCountMax2);
+            document.getElementById('desired-count-max2').value = desiredCountMax2
+            document.getElementById('desired-count-min2').value = desiredCountMin2
+
+            const componentCount3 = parseInt(document.getElementById('component-count3').value);
+            let desiredCountMin3 = parseInt(document.getElementById('desired-count-min3').value);
+            let desiredCountMax3 = parseInt(document.getElementById('desired-count-max3').value);
+            desiredCountMax3 = Math.min(desiredCountMax3,componentCount3);
+            desiredCountMin3 = Math.min(desiredCountMin3,desiredCountMax3);
+            document.getElementById('desired-count-max3').value = desiredCountMax3
+            document.getElementById('desired-count-min3').value = desiredCountMin3
+            
+
+            let initialHandSize = parseInt(document.getElementById('initial-hand-size').value);
+            const deckSize = parseInt(document.getElementById('deck-size').value);
+            initialHandSize = Math.min(initialHandSize,deckSize);
+            document.getElementById('initial-hand-size').value = initialHandSize;
+
+            let probability = 0.;
+            //const probability = (combination(componentCount, desiredCount) * combination(deckSize - componentCount,initialHandSize - desiredCount)) / combination(deckSize,initialHandSize);
+            for (let desiredCount1 = desiredCountMin1; desiredCount1 <= desiredCountMax1; desiredCount1++) {
+                for (let desiredCount2 = desiredCountMin2; desiredCount2 <= desiredCountMax2; desiredCount2++) {
+                    for (let desiredCount3 = desiredCountMin3; desiredCount3 <= desiredCountMax3; desiredCount3++) {
+                        if(desiredCount1+desiredCount2+desiredCount3<=initialHandSize){
+                            probability += (combination(componentCount1, desiredCount1)*combination(componentCount2, desiredCount2)*combination(componentCount3, desiredCount3) * combination(deckSize - componentCount1 - componentCount2-componentCount3,initialHandSize - desiredCount1-desiredCount2-desiredCount3)) / combination(deckSize,initialHandSize);
+                        }
+                    }
+                }
+            }
+
+            document.getElementById('result').innerText = `上手率: ${(probability * 100).toFixed(2)}%`;
+        });
+    </script>
+</body>
+</html>
